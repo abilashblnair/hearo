@@ -19,7 +19,7 @@ struct HomeView: View {
                 }
                 .tag(2)
         }
-        .sheet(isPresented: $showRecordingSheet) {
+        .fullScreenCover(isPresented: $showRecordingSheet) {
             RecordingView(onSave: {
                 // Notify RecordListView to reload
                 NotificationCenter.default.post(name: .didSaveRecording, object: nil)

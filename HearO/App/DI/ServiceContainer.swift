@@ -30,7 +30,7 @@ final class ServiceContainer: ObservableObject {
         let gptService = GPTSummarizationServiceImpl(apiKey: Secrets.openAIKey)
         
         return ServiceContainer(
-            audio: AVAudioRecordingServiceImpl(),
+            audio: UnifiedAudioRecordingServiceImpl(),
             transcription: AssemblyAITranscriptionServiceImpl(),
             summarization: gptService,
             translation: gptService, // Same service implements both protocols

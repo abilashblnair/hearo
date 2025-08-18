@@ -18,6 +18,9 @@ struct RecordingView: View {
     @State private var showNamePrompt = false
     @State private var nameText: String = ""
     @State private var isSaving = false
+    
+    // Cancel confirmation alert
+    @State private var showCancelConfirmation = false
 
     // Real-time transcript state
     @State private var transcriptLines: [String] = []
@@ -35,7 +38,8 @@ struct RecordingView: View {
     var onSave: (() -> Void)? = nil
 
     var body: some View {
-        ZStack(alignment: .top) {
+        NavigationView {
+            ZStack(alignment: .top) {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
@@ -81,12 +85,13 @@ struct RecordingView: View {
                         // Transcript section
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Image(systemName: "text.bubble")
-                                    .foregroundColor(.blue)
+                                Image(systemName: liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
+                                    .foregroundColor(liveTranscriptActive ? .green : .blue)
                                 Text("Live Transcript")
                                     .font(.headline)
                                     .fontWeight(.semibold)
                                 Spacer()
+                                
                                 if !transcriptPermissionGranted {
                                     Button("Enable") {
                                         Task { await requestTranscriptPermissions() }
@@ -97,10 +102,19 @@ struct RecordingView: View {
                                     .background(Color.blue)
                                     .foregroundColor(.white)
                                     .cornerRadius(8)
-                                } else {
-                                    Text("Live transcript available with unified service")
+                                } else if !isRecording {
+                                    Text("Will transcribe when recording starts")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+                                } else {
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(liveTranscriptActive ? Color.green : Color.orange)
+                                            .frame(width: 6, height: 6)
+                                        Text(liveTranscriptActive ? "Transcribing" : "Ready")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                             .padding(.horizontal)
@@ -134,10 +148,10 @@ struct RecordingView: View {
 
                                         if transcriptLines.isEmpty && currentPartialText.isEmpty && transcriptPermissionGranted {
                                             VStack(spacing: 8) {
-                                                Image(systemName: "mic.circle")
+                                                Image(systemName: liveTranscriptActive ? "mic.circle.fill" : "mic.circle")
                                                     .font(.system(size: 40))
-                                                    .foregroundColor(.secondary)
-                                                Text("Listening for speech...")
+                                                    .foregroundColor(liveTranscriptActive ? .green : .secondary)
+                                                Text(liveTranscriptActive ? "Listening for speech..." : (isRecording ? "Transcription starting..." : "Ready to transcribe"))
                                                     .font(.body)
                                                     .foregroundColor(.secondary)
                                             }
@@ -299,8 +313,12 @@ struct RecordingView: View {
         }
         .onDisappear {
             stopTimers()
-            (di.audio as? UnifiedAudioRecordingServiceImpl)?.disableTranscription()
-            // Deactivate audio session if no recording is active
+            
+            // IMPORTANT: Don't disable transcription when view disappears!
+            // Transcription should continue in background if recording is active
+            // Only disable transcription when user explicitly stops it or stops recording
+            
+            // Only deactivate audio session if no recording is active
             di.audio.deactivateSessionIfNeeded()
         }
         .onReceive(meterTimer) { _ in
@@ -319,6 +337,37 @@ struct RecordingView: View {
             Button("Save") { saveNamedRecording() }
             Button("Cancel", role: .cancel) { showNamePrompt = false }
         }
+        .alert("Stop Recording?", isPresented: $showCancelConfirmation) {
+            Button("Continue in Background") {
+                // Continue recording in background and dismiss
+                dismiss()
+            }
+            Button("Stop Recording", role: .destructive) {
+                // Stop recording and dismiss
+                Task { await forceStopRecording() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Do you want to continue recording in the background or stop the recording?")
+        }
+        .navigationTitle("Recording")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { 
+                    if isRecording || di.audio.isSessionActive {
+                        showCancelConfirmation = true 
+                    } else {
+                        dismiss()
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+        } // NavigationView closing brace
     }
 
     private var defaultTitle: String { "Session " + Date.now.formatted(date: .abbreviated, time: .shortened) }
@@ -342,19 +391,51 @@ struct RecordingView: View {
                     }
                 }
             }
+            
+            // Set up error handling
+            unifiedService.onError = { error in
+                DispatchQueue.main.async {
+                    self.error = "Audio error: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
     @MainActor
     private func requestTranscriptPermissions() async {
-        // Legacy service doesn't support transcription
-        self.error = "Live transcription not available with legacy recording service"
+        do {
+            if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                try await unifiedService.requestSpeechPermission()
+                transcriptPermissionGranted = true
+            } else {
+                self.error = "Live transcription not available with this audio service"
+            }
+        } catch {
+            self.error = "Speech recognition permission denied: \(error.localizedDescription)"
+            transcriptPermissionGranted = false
+        }
     }
     
     @MainActor
     private func toggleLiveTranscript() async {
-        // Legacy service doesn't support live transcription
-        self.error = "Live transcription not available with legacy recording service"
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else {
+            self.error = "Live transcription not available with this audio service"
+            return
+        }
+        
+        do {
+            if transcriptEnabled {
+                unifiedService.disableTranscription()
+                transcriptEnabled = false
+                liveTranscriptActive = false
+            } else {
+                try await unifiedService.enableTranscription()
+                transcriptEnabled = true
+                liveTranscriptActive = true
+            }
+        } catch {
+            self.error = "Failed to toggle transcription: \(error.localizedDescription)"
+        }
     }
 
 
@@ -363,7 +444,9 @@ struct RecordingView: View {
 
     private func attachOrStart() async {
         if di.audio.isSessionActive {
-            // Attach to ongoing session
+            print("🔗 Attaching to existing recording session...")
+            
+            // Restore basic recording state
             isRecording = di.audio.isRecording
             elapsed = di.audio.currentTime
             if let url = di.audio.currentRecordingURL {
@@ -372,7 +455,21 @@ struct RecordingView: View {
             }
             startTimers()
             
-            // Don't auto-enable transcription - let user control it
+            // Restore transcription state if it was already active
+            if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                if unifiedService.isTranscriptionActive {
+                    print("🗣️ Transcription was already active, restoring UI state...")
+                    transcriptEnabled = true
+                    liveTranscriptActive = true
+
+                    
+                    print("✅ Live transcription UI state restored")
+                } else {
+                    print("📝 No active transcription detected")
+                }
+            }
+            
+            print("✅ Successfully attached to existing session (Recording: \(isRecording), Transcription: \(transcriptEnabled))")
         } else {
             await startRecording()
         }
@@ -384,10 +481,15 @@ struct RecordingView: View {
             let url = try AudioFileStore.url(for: sessionID)
             try await di.audio.requestMicPermission()
             
-            // Legacy service doesn't support live transcription
-            
-            // Always start basic recording first - transcription is controlled separately
-            try di.audio.startRecording(to: url)
+            // Start recording with native transcription if permissions are granted
+            if transcriptPermissionGranted, let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                try await unifiedService.startRecordingWithNativeTranscription(to: url)
+                transcriptEnabled = true
+                liveTranscriptActive = true
+            } else {
+                // Fall back to basic recording
+                try di.audio.startRecording(to: url)
+            }
             
             isRecording = true
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -423,7 +525,12 @@ struct RecordingView: View {
             isRecording = false
             stopTimers()
             
-            // Legacy service doesn't need transcription cleanup
+            // Clean up transcription if active
+            if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                unifiedService.disableTranscription()
+            }
+            transcriptEnabled = false
+            liveTranscriptActive = false
             
             lastDuration = duration
             UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -432,6 +539,33 @@ struct RecordingView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.isSaving = false
                 self.showNamePrompt = true
+            }
+        } catch { 
+            self.isSaving = false
+            self.error = error.localizedDescription 
+        }
+    }
+    
+    func forceStopRecording() async {
+        do {
+            isSaving = true
+            _ = try di.audio.stopRecording()
+            isRecording = false
+            stopTimers()
+            
+            // Clean up transcription if active
+            if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                unifiedService.disableTranscription()
+            }
+            transcriptEnabled = false
+            liveTranscriptActive = false
+            
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            
+            // Small delay to ensure smooth transition then dismiss
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.isSaving = false
+                self.dismiss()
             }
         } catch { 
             self.isSaving = false
@@ -450,7 +584,9 @@ struct RecordingView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             NotificationCenter.default.post(name: .didSaveRecording, object: nil)
             onSave?(); dismiss()
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     func startTimers() {

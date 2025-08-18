@@ -15,11 +15,8 @@ final class AudioStateManager: ObservableObject {
     // MARK: - Recording State Management
     
     func startRecording() -> Bool {
-        guard !isStandaloneTranscriptActive else {
-            print("❌ AudioStateManager: Cannot start recording while standalone transcript is active")
-            return false
-        }
-        
+        // Allow recording to start even if transcript is active
+        // We want simultaneous recording and transcription
         isRecordingActive = true
         print("🎙️ AudioStateManager: Recording started")
         return true
@@ -51,10 +48,12 @@ final class AudioStateManager: ObservableObject {
     // MARK: - State Queries
     
     var canStartRecording: Bool {
+        // Recording can start unless standalone transcript (AAI streaming) is active
         !isStandaloneTranscriptActive
     }
     
     var canStartStandaloneTranscript: Bool {
+        // Standalone transcript (AAI streaming) cannot start if recording is active
         !isRecordingActive
     }
     

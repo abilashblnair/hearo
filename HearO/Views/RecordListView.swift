@@ -66,7 +66,7 @@ struct RecordListView: View {
                         Color.black.opacity(0.3).ignoresSafeArea()
                         VStack(spacing: 12) {
                             ProgressView()
-                            Text("Transcribing with AssemblyAI…").font(.footnote).foregroundColor(.secondary)
+                            Text("Transcribing…").font(.footnote).foregroundColor(.secondary)
                         }
                         .padding(16)
                         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))

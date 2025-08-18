@@ -87,6 +87,7 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
     }
     
     func disableTranscription() {
+        print("🔇 UnifiedAudioRecordingServiceImpl: Disabling transcription...")
         audioSessionManager.stopTranscription()
     }
     
@@ -100,5 +101,9 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
     var onError: ((Error) -> Void)? {
         get { audioSessionManager.onError }
         set { audioSessionManager.onError = newValue }
+    }
+    
+    var isTranscriptionActive: Bool {
+        audioSessionManager.isTranscriptionActive
     }
 }
