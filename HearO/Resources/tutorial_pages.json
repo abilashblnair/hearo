@@ -1,0 +1,17 @@
+[
+  {
+    "imageName": "tutorial1",
+    "title": "Record conversations",
+    "description": "Capture every word with crystal-clear audio recording."
+  },
+  {
+    "imageName": "tutorial2",
+    "title": "Transcribe conversations",
+    "description": "Get accurate transcripts of your conversations, automatically."
+  },
+  {
+    "imageName": "tutorial3",
+    "title": "Search transcripts",
+    "description": "Quickly find specific information within your transcript using the search bar."
+  }
+]
