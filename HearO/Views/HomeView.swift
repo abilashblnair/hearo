@@ -12,7 +12,7 @@ struct HomeView: View {
                     Text("Record")
                 }
                 .tag(0)
-            SettingsTab()
+            SettingsView()
                 .tabItem {
                     Image(systemName: "gearshape")
                     Text("Settings")
