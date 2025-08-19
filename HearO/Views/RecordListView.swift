@@ -74,7 +74,6 @@ struct RecordListView: View {
                     }
                 }
             }
-            .navigationBarHidden(true)
             .onAppear {
                 Task { await loadRecordings() }
                 playerDelegate.onFinish = {

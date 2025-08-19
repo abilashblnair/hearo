@@ -17,70 +17,142 @@ struct RealTimeTranscriptView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                if !isAuthorized {
-                    VStack(spacing: 8) {
-                        Image(systemName: "mic.slash").font(.largeTitle)
-                        Text("Speech permission required").font(.headline)
-                        Text("Please allow speech recognition to enable live transcription.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Button("Request Permission") {
-                            Task { await requestAuthorization() }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    VStack {
-                        // Control buttons
-                        HStack {
-                            Button(action: { isRecording ? stopRecognition() : startRecognition() }) {
-                                HStack {
-                                    Image(systemName: isRecording ? "stop.fill" : "mic.fill")
-                                    Text(isRecording ? "Stop" : "Start")
-                                }
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 12)
-                                .background(isRecording ? Color.red : Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(20)
-                            }
-                            .disabled(recognizer?.isAvailable != true)
-                        }
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                // iPad centered layout
+                GeometryReader { geometry in
+                    HStack {
+                        Spacer()
                         
-                        // Error message
-                        if let errorMessage = errorMessage {
-                            Text(errorMessage)
-                                .foregroundColor(.red)
-                                .padding()
-                                .background(Color.red.opacity(0.1))
-                                .cornerRadius(8)
-                        }
+                        VStack(alignment: .leading, spacing: 16) {
+                            if !isAuthorized {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "mic.slash").font(.largeTitle)
+                                    Text("Speech permission required").font(.headline)
+                                    Text("Please allow speech recognition to enable live transcription.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Button("Request Permission") {
+                                        Task { await requestAuthorization() }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                VStack {
+                                    // Control buttons
+                                    HStack {
+                                        Button(action: { isRecording ? stopRecognition() : startRecognition() }) {
+                                            HStack {
+                                                Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                                                Text(isRecording ? "Stop" : "Start")
+                                            }
+                                            .padding(.horizontal, 24)
+                                            .padding(.vertical, 12)
+                                            .background(isRecording ? Color.red : Color.blue)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(20)
+                                        }
+                                        .disabled(recognizer?.isAvailable != true)
+                                    }
+                                    
+                                    // Error message
+                                    if let errorMessage = errorMessage {
+                                        Text(errorMessage)
+                                            .foregroundColor(.red)
+                                            .padding()
+                                            .background(Color.red.opacity(0.1))
+                                            .cornerRadius(8)
+                                    }
 
-                        // Transcript display
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Live Transcript")
-                                    .font(.headline)
-                                    .padding(.bottom, 4)
-                                
-                                Text(transcript.isEmpty ? "Tap start to begin transcription..." : transcript)
+                                    // Transcript display
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("Live Transcript")
+                                                .font(.headline)
+                                                .padding(.bottom, 4)
+                                            
+                                            Text(transcript.isEmpty ? "Tap start to begin transcription..." : transcript)
+                                                .padding()
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .background(Color.gray.opacity(0.1))
+                                                .cornerRadius(8)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(24)
+                        .frame(maxWidth: min(geometry.size.width * 0.8, 900))
+                        
+                        Spacer()
+                    }
+                }
+            } else {
+                // iPhone layout
+                VStack(alignment: .leading, spacing: 16) {
+                    if !isAuthorized {
+                        VStack(spacing: 8) {
+                            Image(systemName: "mic.slash").font(.largeTitle)
+                            Text("Speech permission required").font(.headline)
+                            Text("Please allow speech recognition to enable live transcription.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Button("Request Permission") {
+                                Task { await requestAuthorization() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        VStack {
+                            // Control buttons
+                            HStack {
+                                Button(action: { isRecording ? stopRecognition() : startRecognition() }) {
+                                    HStack {
+                                        Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                                        Text(isRecording ? "Stop" : "Start")
+                                    }
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 12)
+                                    .background(isRecording ? Color.red : Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(20)
+                                }
+                                .disabled(recognizer?.isAvailable != true)
+                            }
+                            
+                            // Error message
+                            if let errorMessage = errorMessage {
+                                Text(errorMessage)
+                                    .foregroundColor(.red)
                                     .padding()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.gray.opacity(0.1))
+                                    .background(Color.red.opacity(0.1))
                                     .cornerRadius(8)
                             }
+
+                            // Transcript display
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Live Transcript")
+                                        .font(.headline)
+                                        .padding(.bottom, 4)
+                                    
+                                    Text(transcript.isEmpty ? "Tap start to begin transcription..." : transcript)
+                                        .padding()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Color.gray.opacity(0.1))
+                                        .cornerRadius(8)
+                                }
+                            }
                         }
                     }
                 }
+                .padding(16)
             }
-            .padding()
-            .navigationTitle("Live Transcript")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+        }
+        .navigationTitle("Live Transcript")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") { dismiss() }
             }
         }
         .task { await requestAuthorization() }

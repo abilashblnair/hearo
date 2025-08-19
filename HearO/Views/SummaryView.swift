@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SummaryView: View {
     let summary: Summary
+    let sessionDuration: TimeInterval?
     let onSeekToTimestamp: (TimeInterval) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selectedSection: SummarySection = .overview
@@ -9,15 +10,15 @@ struct SummaryView: View {
     @State private var expandedActionItems: Set<UUID> = []
     @State private var animateEntrance = false
     @State private var showingAllQuotes = false
-    
+
     enum SummarySection: String, CaseIterable {
         case overview = "Overview"
-        case keyPoints = "Key Points" 
+        case keyPoints = "Key Points"
         case actionItems = "Action Items"
         case decisions = "Decisions"
         case quotes = "Quotes"
         case timeline = "Timeline"
-        
+
         var icon: String {
             switch self {
             case .overview: return "doc.text"
@@ -28,7 +29,7 @@ struct SummaryView: View {
             case .timeline: return "timeline.selection"
             }
         }
-        
+
         var color: Color {
             switch self {
             case .overview: return .blue
@@ -40,58 +41,91 @@ struct SummaryView: View {
             }
         }
     }
-    
+
     var body: some View {
         NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 20) {
-                        headerView
-                            .opacity(animateEntrance ? 1 : 0)
-                            .offset(y: animateEntrance ? 0 : -20)
-                            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateEntrance)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                // iPad centered layout
+                GeometryReader { geometry in
+                    HStack {
+                        Spacer()
                         
-                        sectionPicker
-                            .opacity(animateEntrance ? 1 : 0)
-                            .offset(y: animateEntrance ? 0 : -10)
-                            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateEntrance)
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical, showsIndicators: false) {
+                                LazyVStack(spacing: 20) {
+                                    headerView
+                                        .opacity(animateEntrance ? 1 : 0)
+                                        .offset(y: animateEntrance ? 0 : -20)
+                                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateEntrance)
+
+                                    sectionPicker
+                                        .opacity(animateEntrance ? 1 : 0)
+                                        .offset(y: animateEntrance ? 0 : -10)
+                                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateEntrance)
+
+                                    contentView
+                                        .opacity(animateEntrance ? 1 : 0)
+                                        .offset(y: animateEntrance ? 0 : 10)
+                                        .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.3), value: animateEntrance)
+                                }
+                                .padding(UIDevice.current.userInterfaceIdiom == .pad ? 32 : 16)
+                            }
+                            .onChange(of: selectedSection) { _, newSection in
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                    proxy.scrollTo(newSection.rawValue, anchor: .top)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: min(geometry.size.width * 0.8, 1000))
                         
-                        contentView
-                            .opacity(animateEntrance ? 1 : 0)
-                            .offset(y: animateEntrance ? 0 : 10)
-                            .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.3), value: animateEntrance)
+                        Spacer()
                     }
-                    .padding()
                 }
-                .onChange(of: selectedSection) { _, newSection in
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                        proxy.scrollTo(newSection.rawValue, anchor: .top)
+            } else {
+                // iPhone layout
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 20) {
+                            headerView
+                                .opacity(animateEntrance ? 1 : 0)
+                                .offset(y: animateEntrance ? 0 : -20)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateEntrance)
+
+                            sectionPicker
+                                .opacity(animateEntrance ? 1 : 0)
+                                .offset(y: animateEntrance ? 0 : -10)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateEntrance)
+
+                            contentView
+                                .opacity(animateEntrance ? 1 : 0)
+                                .offset(y: animateEntrance ? 0 : 10)
+                                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.3), value: animateEntrance)
+                        }
+                        .padding(16)
+                    }
+                    .onChange(of: selectedSection) { _, newSection in
+                        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                            proxy.scrollTo(newSection.rawValue, anchor: .top)
+                        }
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("AI Summary")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") {
-                        generateHapticFeedback(.light)
-                        dismiss()
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("AI Summary")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 16) {
+                    ShareLink(
+                        item: summary.sharingText,
+                        preview: SharePreview("Meeting Summary", image: Image(systemName: "doc.text"))
+                    ) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .medium))
                     }
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 16) {
-                        ShareLink(
-                            item: summary.sharingText,
-                            preview: SharePreview("Meeting Summary", image: Image(systemName: "doc.text"))
-                        ) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                        .onTapGesture {
-                            generateHapticFeedback(.medium)
-                        }
+                    .onTapGesture {
+                        generateHapticFeedback(.medium)
                     }
                 }
             }
@@ -103,44 +137,95 @@ struct SummaryView: View {
             generateHapticFeedback(.light)
         }
     }
-    
+
     private var headerView: some View {
         VStack(spacing: 16) {
             // Summary stats
-            HStack(spacing: 20) {
-                StatCard(
-                    title: "Total Items",
-                    value: "\(summary.totalItems)",
-                    icon: "list.bullet.rectangle",
-                    color: .blue
-                )
-                
-                if !summary.actionItems.isEmpty {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                // iPad layout - more space, bigger stats
+                HStack(spacing: 24) {
+                    // Duration if available
+                    if let duration = sessionDuration, duration > 0 {
+                        StatCard(
+                            title: "Duration",
+                            value: formatDuration(duration),
+                            icon: "clock",
+                            color: .indigo
+                        )
+                    }
+                    
                     StatCard(
-                        title: "Action Items",
-                        value: "\(summary.pendingActionItems.count)/\(summary.actionItems.count)",
-                        icon: "checkmark.circle",
-                        color: .orange
+                        title: "Total Items",
+                        value: "\(summary.totalItems)",
+                        icon: "list.bullet.rectangle",
+                        color: .blue
                     )
+
+                    if !summary.actionItems.isEmpty {
+                        StatCard(
+                            title: "Action Items",
+                            value: "\(summary.pendingActionItems.count)/\(summary.actionItems.count)",
+                            icon: "checkmark.circle",
+                            color: .orange
+                        )
+                    }
+
+                    if !summary.urgentActionItems.isEmpty {
+                        StatCard(
+                            title: "Urgent",
+                            value: "\(summary.urgentActionItems.count)",
+                            icon: "exclamationmark.triangle",
+                            color: .red
+                        )
+                    }
                 }
-                
-                if !summary.urgentActionItems.isEmpty {
+            } else {
+                // iPhone layout - compact
+                HStack(spacing: 20) {
+                    // Duration if available
+                    if let duration = sessionDuration, duration > 0 {
+                        StatCard(
+                            title: "Duration",
+                            value: formatDuration(duration),
+                            icon: "clock",
+                            color: .indigo
+                        )
+                    }
+                    
                     StatCard(
-                        title: "Urgent",
-                        value: "\(summary.urgentActionItems.count)",
-                        icon: "exclamationmark.triangle",
-                        color: .red
+                        title: "Total Items",
+                        value: "\(summary.totalItems)",
+                        icon: "list.bullet.rectangle",
+                        color: .blue
                     )
+
+                    if !summary.actionItems.isEmpty {
+                        StatCard(
+                            title: "Action Items",
+                            value: "\(summary.pendingActionItems.count)/\(summary.actionItems.count)",
+                            icon: "checkmark.circle",
+                            color: .orange
+                        )
+                    }
+
+                    if !summary.urgentActionItems.isEmpty {
+                        StatCard(
+                            title: "Urgent",
+                            value: "\(summary.urgentActionItems.count)",
+                            icon: "exclamationmark.triangle",
+                            color: .red
+                        )
+                    }
                 }
             }
-            
+
             // Generated timestamp
             Text("Generated \(RelativeDateTimeFormatter().localizedString(for: summary.generatedAt, relativeTo: Date()))")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
     }
-    
+
     private var sectionPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
@@ -158,7 +243,7 @@ struct SummaryView: View {
             .padding(.horizontal)
         }
     }
-    
+
     private var availableSections: [SummarySection] {
         SummarySection.allCases.filter { section in
             switch section {
@@ -171,7 +256,7 @@ struct SummaryView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var contentView: some View {
         VStack(spacing: 24) {
@@ -185,7 +270,7 @@ struct SummaryView: View {
                             .lineLimit(nil)
                     }
                 }
-                
+
             case .keyPoints:
                 if !summary.keyPoints.isEmpty {
                     SectionView(id: selectedSection.rawValue, title: "Key Points", icon: "key", color: .green) {
@@ -194,7 +279,7 @@ struct SummaryView: View {
                         }
                     }
                 }
-                
+
             case .actionItems:
                 if !summary.actionItems.isEmpty {
                     SectionView(id: selectedSection.rawValue, title: "Action Items", icon: "checkmark.circle", color: .orange) {
@@ -217,7 +302,7 @@ struct SummaryView: View {
                         }
                     }
                 }
-                
+
             case .decisions:
                 if !summary.decisions.isEmpty {
                     SectionView(id: selectedSection.rawValue, title: "Decisions", icon: "arrow.triangle.branch", color: .purple) {
@@ -226,16 +311,16 @@ struct SummaryView: View {
                         }
                     }
                 }
-                
+
             case .quotes:
                 if !summary.quotes.isEmpty {
                     SectionView(id: selectedSection.rawValue, title: "Notable Quotes", icon: "quote.bubble", color: .pink) {
                         let displayQuotes = showingAllQuotes ? summary.quotes : Array(summary.quotes.prefix(3))
-                        
+
                         ForEach(displayQuotes) { quote in
                             QuoteRow(quote: quote, onSeek: onSeekToTimestamp)
                         }
-                        
+
                         if summary.quotes.count > 3 {
                             Button(showingAllQuotes ? "Show Less" : "Show All (\(summary.quotes.count))") {
                                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
@@ -249,7 +334,7 @@ struct SummaryView: View {
                         }
                     }
                 }
-                
+
             case .timeline:
                 if !summary.timeline.isEmpty {
                     SectionView(id: selectedSection.rawValue, title: "Timeline", icon: "timeline.selection", color: .indigo) {
@@ -261,6 +346,23 @@ struct SummaryView: View {
             }
         }
     }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        if duration <= 0 {
+            return "Unknown"
+        }
+        
+        let total = Int(duration)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+    }
 }
 
 // MARK: - Supporting Views
@@ -270,17 +372,17 @@ struct StatCard: View {
     let value: String
     let icon: String
     let color: Color
-    
+
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundColor(color)
-            
+
             Text(value)
                 .font(.title2.weight(.bold))
                 .foregroundColor(.primary)
-            
+
             Text(title)
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -298,13 +400,13 @@ struct SectionTab: View {
     let section: SummaryView.SummarySection
     let isSelected: Bool
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
                 Image(systemName: section.icon)
                     .font(.system(size: 14, weight: .medium))
-                
+
                 Text(section.rawValue)
                     .font(.subheadline.weight(.medium))
             }
@@ -327,21 +429,21 @@ struct SectionView<Content: View>: View {
     let icon: String
     let color: Color
     @ViewBuilder let content: Content
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(color)
-                
+
                 Text(title)
                     .font(.title3.weight(.semibold))
                     .foregroundColor(.primary)
-                
+
                 Spacer()
             }
-            
+
             content
         }
         .padding()
@@ -357,24 +459,24 @@ struct KeyPointRow: View {
     let point: Summary.Point
     let index: Int
     let onSeek: (TimeInterval) -> Void
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Circle()
                 .fill(Color.green.gradient)
                 .frame(width: 8, height: 8)
                 .padding(.top, 8)
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 Text(point.text)
                     .font(.body)
                     .foregroundColor(.primary)
-                
-                if let refs = point.refs, !refs.isEmpty {
+
+                if let refs = point.refs, !refs.validRefs.isEmpty {
                     TimestampChips(refs: refs, onSeek: onSeek)
                 }
             }
-            
+
             Spacer()
         }
         .padding(.vertical, 4)
@@ -386,7 +488,7 @@ struct ActionItemRow: View {
     let isExpanded: Bool
     let onToggleExpansion: () -> Void
     let onSeek: (TimeInterval) -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: onToggleExpansion) {
@@ -395,34 +497,34 @@ struct ActionItemRow: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(statusColor)
                         .frame(width: 20)
-                    
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text(item.text)
                             .font(.body)
                             .foregroundColor(.primary)
                             .multilineTextAlignment(.leading)
-                        
+
                         HStack(spacing: 12) {
                             if let owner = item.owner {
                                 Label(owner, systemImage: "person.circle")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            
+
                             if let date = item.dueDateFormatted {
                                 Label(date, systemImage: "calendar")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            
+
                             if let priority = item.priority {
                                 PriorityBadge(priority: priority)
                             }
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     Image(systemName: "chevron.down")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
@@ -430,15 +532,15 @@ struct ActionItemRow: View {
                 }
             }
             .buttonStyle(PlainButtonStyle())
-            
-            if isExpanded, let refs = item.refs, !refs.isEmpty {
+
+            if isExpanded, let refs = item.refs, !refs.validRefs.isEmpty {
                 TimestampChips(refs: refs, onSeek: onSeek)
                     .padding(.leading, 32)
             }
         }
         .padding(.vertical, 4)
     }
-    
+
     private var statusIcon: String {
         switch item.status {
         case .pending: return "circle"
@@ -447,7 +549,7 @@ struct ActionItemRow: View {
         case .cancelled: return "xmark.circle"
         }
     }
-    
+
     private var statusColor: Color {
         switch item.status {
         case .pending: return .orange
@@ -460,7 +562,7 @@ struct ActionItemRow: View {
 
 struct PriorityBadge: View {
     let priority: Summary.ActionItem.Priority
-    
+
     var body: some View {
         Text(priority.rawValue.capitalized)
             .font(.caption2.weight(.semibold))
@@ -472,7 +574,7 @@ struct PriorityBadge: View {
                     .fill(priorityColor)
             )
     }
-    
+
     private var priorityColor: Color {
         switch priority {
         case .low: return .blue
@@ -486,7 +588,7 @@ struct PriorityBadge: View {
 struct DecisionRow: View {
     let decision: Summary.Decision
     let onSeek: (TimeInterval) -> Void
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "arrow.triangle.branch")
@@ -494,23 +596,23 @@ struct DecisionRow: View {
                 .foregroundColor(.purple)
                 .frame(width: 20)
                 .padding(.top, 2)
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 Text(decision.text)
                     .font(.body)
                     .foregroundColor(.primary)
-                
+
                 HStack(spacing: 12) {
                     if let impact = decision.impact {
                         ImpactBadge(impact: impact)
                     }
-                    
-                    if let refs = decision.refs, !refs.isEmpty {
+
+                    if let refs = decision.refs, !refs.validRefs.isEmpty {
                         TimestampChips(refs: refs, onSeek: onSeek)
                     }
                 }
             }
-            
+
             Spacer()
         }
         .padding(.vertical, 4)
@@ -519,12 +621,12 @@ struct DecisionRow: View {
 
 struct ImpactBadge: View {
     let impact: Summary.Decision.Impact
-    
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "impact")
                 .font(.caption2)
-            
+
             Text(impact.rawValue.capitalized)
                 .font(.caption2.weight(.medium))
         }
@@ -535,36 +637,36 @@ struct ImpactBadge: View {
 struct QuoteRow: View {
     let quote: Summary.Quote
     let onSeek: (TimeInterval) -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "quote.opening")
                     .font(.system(size: 16, weight: .light))
                     .foregroundColor(.pink)
-                
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text(quote.text)
                         .font(.body.italic())
                         .foregroundColor(.primary)
-                    
+
                     if let speaker = quote.speaker {
                         Text("— \(speaker)")
                             .font(.caption.weight(.medium))
                             .foregroundColor(.secondary)
                     }
-                    
+
                     if let context = quote.context {
                         Text(context)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
-                
+
                 Spacer()
             }
-            
-            if let refs = quote.refs, !refs.isEmpty {
+
+            if let refs = quote.refs, !refs.validRefs.isEmpty {
                 TimestampChips(refs: refs, onSeek: onSeek)
                     .padding(.leading, 28)
             }
@@ -576,7 +678,7 @@ struct QuoteRow: View {
 struct TimelineRow: View {
     let entry: Summary.TimelineEntry
     let onSeek: (TimeInterval) -> Void
-    
+
     var body: some View {
         Button(action: {
             if let timeInterval = entry.at.timeInterval {
@@ -589,31 +691,31 @@ struct TimelineRow: View {
                     Circle()
                         .fill(importanceColor)
                         .frame(width: 10, height: 10)
-                    
+
                     Rectangle()
                         .fill(Color(.tertiarySystemFill))
                         .frame(width: 2)
                         .frame(maxHeight: .infinity)
                 }
                 .frame(height: 50)
-                
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text(entry.at)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.blue)
-                    
+
                     Text(entry.text)
                         .font(.body)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.leading)
                 }
-                
+
                 Spacer()
             }
         }
         .buttonStyle(PlainButtonStyle())
     }
-    
+
     private var importanceColor: Color {
         guard let importance = entry.importance else { return .indigo }
         switch importance {
@@ -629,32 +731,35 @@ struct TimestampChips: View {
     let onSeek: (TimeInterval) -> Void
     
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(refs) { ref in
-                Button(action: {
-                    if let startTime = ref.startTimeInterval {
-                        onSeek(startTime)
-                        generateHapticFeedback(.light)
+        let validTimestamps = refs.validRefs
+        if !validTimestamps.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(validTimestamps) { ref in
+                    Button(action: {
+                        if let startTime = ref.startTimeInterval {
+                            onSeek(startTime)
+                            generateHapticFeedback(.light)
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 8))
+
+                            Text(ref.formattedRange)
+                                .font(.caption2.weight(.medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.blue.gradient)
+                        )
                     }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 8))
-                        
-                        Text(ref.formattedRange)
-                            .font(.caption2.weight(.medium))
+                    .scaleEffect(1.0)
+                    .onTapGesture {
+                        // Add button press animation
                     }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.blue.gradient)
-                    )
-                }
-                .scaleEffect(1.0)
-                .onTapGesture {
-                    // Add button press animation
                 }
             }
         }
@@ -662,6 +767,17 @@ struct TimestampChips: View {
 }
 
 // MARK: - Extensions
+
+private extension Array where Element == Summary.Ref {
+    var validRefs: [Summary.Ref] {
+        self.filter { ref in
+            // Filter out refs with invalid timestamps (00:00:00 - 00:00:00)
+            return !(ref.start == "00:00:00" && ref.end == "00:00:00") && 
+                   ref.startTimeInterval != nil && ref.endTimeInterval != nil &&
+                   (ref.startTimeInterval! >= 0) && (ref.endTimeInterval! >= 0)
+        }
+    }
+}
 
 private extension String {
     var timeInterval: TimeInterval? {
@@ -704,8 +820,8 @@ func generateHapticFeedback(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
             Summary.TimelineEntry(at: "00:15:30", text: "Feature discussion began", importance: .high)
         ]
     )
-    
-    SummaryView(summary: sampleSummary) { timestamp in
+
+    SummaryView(summary: sampleSummary, sessionDuration: 1800) { timestamp in
         print("Seeking to \(timestamp)")
     }
 }

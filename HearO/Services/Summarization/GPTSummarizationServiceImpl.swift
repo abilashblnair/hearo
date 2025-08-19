@@ -2,9 +2,20 @@ import Foundation
 
 final class GPTSummarizationServiceImpl: SummarizationService, TranslationService {
     private let apiKey: String
-    private let model = "gpt-4o-mini"
+    private let model = "gpt-4.1"
     private let maxChunkDuration: TimeInterval = 8 * 60 // 8 minutes per chunk
+    private let maxTranslationChunkDuration: TimeInterval = 2 * 60 // 2 minutes per chunk for translation
+    private let maxTranslationChars = 3000 // Max characters per translation request
     private let chunkOverlap: TimeInterval = 15 // 15 seconds overlap
+    private let maxRetries = 3
+    
+    // Custom URLSession with conservative timeout for smaller translation requests
+    private lazy var urlSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 90 // 1.5 minutes
+        configuration.timeoutIntervalForResource = 180 // 3 minutes
+        return URLSession(configuration: configuration)
+    }()
     
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -45,14 +56,29 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
     func translate(segments: [TranscriptSegment], targetLanguage: String) async throws -> [TranscriptSegment] {
         guard !segments.isEmpty else { return segments }
         
-        let chunks = chunkSegments(segments, maxDuration: maxChunkDuration * 2)
+        print("🌍 Starting translation to \(targetLanguage) for \(segments.count) segments")
+        
+        // Use character-based chunking for translation to ensure manageable request sizes
+        let chunks = chunkSegmentsForTranslation(segments)
         var translatedSegments: [TranscriptSegment] = []
         
-        for chunk in chunks {
-            let translated = try await translateChunk(chunk, targetLanguage: targetLanguage)
+        print("📦 Created \(chunks.count) character-based chunks for translation")
+        
+        for (index, chunk) in chunks.enumerated() {
+            print("🔄 Translating chunk \(index + 1)/\(chunks.count) with \(chunk.count) segments")
+            
+            let translated = try await translateChunkWithRetry(chunk, targetLanguage: targetLanguage)
             translatedSegments.append(contentsOf: translated)
+            
+            print("✅ Completed chunk \(index + 1)/\(chunks.count)")
+            
+            // Add small delay between chunks to avoid rate limiting
+            if index < chunks.count - 1 {
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
+            }
         }
         
+        print("🎉 Translation completed: \(translatedSegments.count) segments")
         return translatedSegments
     }
     
@@ -93,6 +119,69 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         }
     }
     
+    private func translateChunkWithRetry(_ segments: [TranscriptSegment], targetLanguage: String) async throws -> [TranscriptSegment] {
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("🔄 Translation attempt \(attempt)/\(maxRetries) for chunk with \(segments.count) segments")
+                return try await translateChunk(segments, targetLanguage: targetLanguage)
+            } catch {
+                lastError = error
+                print("❌ Translation attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                // Check if it's a timeout error
+                if let urlError = error as? URLError, urlError.code == .timedOut {
+                    if attempt < maxRetries {
+                        let delay = Double(attempt) * 1.5 // Faster backoff: 1.5s, 3s, 4.5s
+                        print("⏳ Retrying in \(delay) seconds...")
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        continue
+                    }
+                    
+                    // If all retries failed due to timeout, try ultra-small chunking as last resort
+                    if attempt == maxRetries {
+                        print("🚨 All retries failed, attempting ultra-small chunk fallback...")
+                        return try await translateWithUltraSmallChunks(segments, targetLanguage: targetLanguage)
+                    }
+                }
+                
+                // For non-timeout errors, fail immediately
+                if !(error is URLError && (error as! URLError).code == .timedOut) {
+                    throw error
+                }
+            }
+        }
+        
+        print("💥 All \(maxRetries) translation attempts failed")
+        throw lastError ?? SummarizationError.apiError(408, "Translation failed after \(maxRetries) attempts")
+    }
+    
+    private func translateWithUltraSmallChunks(_ segments: [TranscriptSegment], targetLanguage: String) async throws -> [TranscriptSegment] {
+        print("⚡ Using ultra-small chunk fallback (1 segment per request)")
+        var translatedSegments: [TranscriptSegment] = []
+        
+        for (index, segment) in segments.enumerated() {
+            print("🔄 Translating individual segment \(index + 1)/\(segments.count)")
+            
+            do {
+                let translated = try await translateChunk([segment], targetLanguage: targetLanguage)
+                translatedSegments.append(contentsOf: translated)
+                
+                // Short delay between individual requests
+                if index < segments.count - 1 {
+                    try await Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay
+                }
+            } catch {
+                print("❌ Failed to translate individual segment, using original text")
+                // Fallback: keep original text if translation fails
+                translatedSegments.append(segment)
+            }
+        }
+        
+        return translatedSegments
+    }
+    
     private func mergePartialSummaries(_ partials: [Summary], locale: String) async throws -> Summary {
         guard partials.count > 1 else {
             var defaultSummary = partials.first ?? Summary()
@@ -122,6 +211,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         
         print("🔑 Using OpenAI API key: \(String(apiKey.prefix(10)))...")
         print("🤖 Model: \(model)")
+        print("📝 Request size: \(user.count) characters")
         
         let request = OpenAIRequest(
             model: model,
@@ -139,7 +229,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(request)
         
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let (data, response) = try await urlSession.data(for: urlRequest)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw SummarizationError.invalidResponse
@@ -217,6 +307,10 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
     }
     
     private func buildTranslationPrompt(segments: [TranscriptSegment], targetLanguage: String) -> String {
+        // Estimate prompt size to avoid overly large requests
+        let estimatedSize = segments.reduce(0) { $0 + $1.text.count }
+        print("📊 Translation chunk estimated text size: \(estimatedSize) characters")
+        
         let segmentArray = segments.map { segment in
             [
                 "speaker": segment.speaker ?? "Unknown",
@@ -315,6 +409,118 @@ private extension GPTSummarizationServiceImpl {
         }
         
         return chunks
+    }
+    
+    func chunkSegmentsForTranslation(_ segments: [TranscriptSegment]) -> [[TranscriptSegment]] {
+        guard !segments.isEmpty else { return [] }
+        
+        var chunks: [[TranscriptSegment]] = []
+        var currentChunk: [TranscriptSegment] = []
+        var currentCharCount = 0
+        
+        for segment in segments {
+            let segmentCharCount = segment.text.count
+            
+            // If adding this segment would exceed the limit and we have segments in current chunk
+            if currentCharCount + segmentCharCount > maxTranslationChars && !currentChunk.isEmpty {
+                chunks.append(currentChunk)
+                currentChunk = []
+                currentCharCount = 0
+            }
+            
+            // If a single segment is too large, split it
+            if segmentCharCount > maxTranslationChars {
+                // First, add any existing chunk
+                if !currentChunk.isEmpty {
+                    chunks.append(currentChunk)
+                    currentChunk = []
+                    currentCharCount = 0
+                }
+                
+                // Split the large segment
+                let splitSegments = splitLargeSegment(segment)
+                for splitSegment in splitSegments {
+                    chunks.append([splitSegment])
+                }
+            } else {
+                currentChunk.append(segment)
+                currentCharCount += segmentCharCount
+            }
+        }
+        
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
+        
+        print("📊 Character-based chunking: \(segments.count) segments → \(chunks.count) chunks")
+        for (index, chunk) in chunks.enumerated() {
+            let charCount = chunk.reduce(0) { $0 + $1.text.count }
+            print("  Chunk \(index + 1): \(chunk.count) segments, \(charCount) chars")
+        }
+        
+        return chunks
+    }
+    
+    func splitLargeSegment(_ segment: TranscriptSegment) -> [TranscriptSegment] {
+        let text = segment.text
+        guard text.count > maxTranslationChars else { return [segment] }
+        
+        var segments: [TranscriptSegment] = []
+        var currentPosition = 0
+        
+        while currentPosition < text.count {
+            let remainingChars = text.count - currentPosition
+            let chunkSize = min(maxTranslationChars, remainingChars)
+            
+            // Calculate end position
+            var endPosition = currentPosition + chunkSize
+            
+            // If this isn't the last chunk, try to find a better break point
+            if endPosition < text.count {
+                let searchStart = max(currentPosition + chunkSize / 2, currentPosition)
+                let searchEnd = min(endPosition + 100, text.count) // Look a bit ahead for better boundaries
+                
+                let searchStartIndex = text.index(text.startIndex, offsetBy: searchStart)
+                let searchEndIndex = text.index(text.startIndex, offsetBy: searchEnd)
+                let searchSubstring = text[searchStartIndex..<searchEndIndex]
+                
+                // Look for sentence end
+                if let range = searchSubstring.range(of: "[.!?]", options: .regularExpression) {
+                    let offset = text.distance(from: text.startIndex, to: range.upperBound)
+                    endPosition = offset
+                }
+                // Look for word boundary
+                else if let range = searchSubstring.range(of: " ") {
+                    let offset = text.distance(from: text.startIndex, to: range.lowerBound)
+                    endPosition = offset
+                }
+            }
+            
+            // Extract text for this chunk
+            let startIndex = text.index(text.startIndex, offsetBy: currentPosition)
+            let endIndex = text.index(text.startIndex, offsetBy: min(endPosition, text.count))
+            let chunkText = String(text[startIndex..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if !chunkText.isEmpty {
+                segments.append(TranscriptSegment(
+                    id: UUID(),
+                    speaker: segment.speaker,
+                    text: chunkText,
+                    startTime: segment.startTime,
+                    endTime: segment.endTime
+                ))
+            }
+            
+            // Ensure progress to avoid infinite loops
+            if endPosition <= currentPosition && currentPosition < text.count {
+                currentPosition += 1
+            } else {
+                currentPosition = endPosition
+            }
+        }
+        
+        print("🔪 Split large segment (\(text.count) chars) into \(segments.count) parts")
+        return segments.isEmpty ? [segment] : segments
     }
 }
 

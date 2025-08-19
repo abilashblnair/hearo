@@ -38,175 +38,361 @@ struct RecordingView: View {
     var onSave: (() -> Void)? = nil
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack(alignment: .top) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // Fixed waveform section
-                        VStack(spacing: 16) {
-                            Text("New Recording")
-                                .font(.headline)
-                                .bold()
-                                .padding(.top, 16)
+                Group {
+                    if UIDevice.current.userInterfaceIdiom == .pad {
+                    // iPad centered layout
+                    GeometryReader { geometry in
+                        HStack {
+                            Spacer()
 
-                            // Waveform container
-                            ZStack(alignment: .top) {
-                                Rectangle()
-                                    .fill(Color(.systemGray6))
-                                    .frame(height: 280)
-                                    .cornerRadius(16)
-
-                                ReactiveScrollingWaveform(power: power, isActive: isRecording)
-                                    .frame(height: 280)
-                                    .padding(.horizontal, 16)
-
-                                GeometryReader { geo in
-                                    Rectangle()
-                                        .fill(Color.red)
-                                        .frame(width: 2, height: 280)
-                                        .position(x: geo.size.width / 2, y: 140)
-                                }
-                                .allowsHitTesting(false)
-                                .frame(height: 280)
-                            }
-
-                            // Timer
-                            Text(timeString(from: elapsed, showMillis: true))
-                                .font(.system(size: 36, weight: .bold, design: .monospaced))
-                                .foregroundColor(.primary)
-                        }
-                        .padding(.horizontal)
-                        .background(Color(.systemBackground))
-                        .background(GeometryReader { geo in
-                            Color.clear.preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
-                        })
-
-                        // Transcript section
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
-                                    .foregroundColor(liveTranscriptActive ? .green : .blue)
-                                Text("Live Transcript")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                Spacer()
-                                
-                                if !transcriptPermissionGranted {
-                                    Button("Enable") {
-                                        Task { await requestTranscriptPermissions() }
-                                    }
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.blue)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(8)
-                                } else if !isRecording {
-                                    Text("Will transcribe when recording starts")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    HStack(spacing: 4) {
-                                        Circle()
-                                            .fill(liveTranscriptActive ? Color.green : Color.orange)
-                                            .frame(width: 6, height: 6)
-                                        Text(liveTranscriptActive ? "Transcribing" : "Ready")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, 20)
-
-                            ScrollViewReader { scrollProxy in
+                            ScrollViewReader { proxy in
                                 ScrollView {
-                                    LazyVStack(alignment: .leading, spacing: 8) {
-                                        // Completed transcript lines
-                                        ForEach(Array(transcriptLines.enumerated()), id: \.offset) { index, line in
-                                            Text(line)
-                                                .font(.body)
-                                                .padding(.horizontal, 16)
-                                                .padding(.vertical, 8)
-                                                .background(Color(.secondarySystemBackground))
-                                                .cornerRadius(8)
-                                                .id("line-\(index)")
-                                        }
+                                    VStack(spacing: 0) {
+                                        // Fixed waveform section
+                                        VStack(spacing: 16) {
+                                            Text("New Recording")
+                                                .font(.headline)
+                                                .bold()
+                                                .padding(.top, 16)
 
-                                        // Current partial text
-                                        if !currentPartialText.isEmpty {
-                                            Text(currentPartialText)
-                                                .font(.body)
-                                                .foregroundColor(.secondary)
-                                                .padding(.horizontal, 16)
-                                                .padding(.vertical, 8)
-                                                .background(Color(.tertiarySystemBackground))
-                                                .cornerRadius(8)
-                                                .id("partial")
-                                        }
+                                            // Waveform container
+                                            ZStack(alignment: .top) {
+                                                Rectangle()
+                                                    .fill(Color(.systemGray6))
+                                                    .frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 350 : 280)
+                                                    .cornerRadius(16)
 
-                                        if transcriptLines.isEmpty && currentPartialText.isEmpty && transcriptPermissionGranted {
-                                            VStack(spacing: 8) {
-                                                Image(systemName: liveTranscriptActive ? "mic.circle.fill" : "mic.circle")
-                                                    .font(.system(size: 40))
-                                                    .foregroundColor(liveTranscriptActive ? .green : .secondary)
-                                                Text(liveTranscriptActive ? "Listening for speech..." : (isRecording ? "Transcription starting..." : "Ready to transcribe"))
-                                                    .font(.body)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                            .padding(.top, 40)
-                                        }
+                                                ReactiveScrollingWaveform(power: power, isActive: isRecording)
+                                                    .frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 350 : 280)
+                                                    .padding(.horizontal, 16)
 
-                                        if !transcriptPermissionGranted {
-                                            VStack(spacing: 12) {
-                                                Image(systemName: "exclamationmark.triangle")
-                                                    .font(.system(size: 32))
-                                                    .foregroundColor(.orange)
-                                                Text("Microphone and Speech Recognition permissions required for live transcript")
-                                                    .font(.body)
-                                                    .multilineTextAlignment(.center)
-                                                    .foregroundColor(.secondary)
-                                                Button("Grant Permissions") {
-                                                    Task { await requestTranscriptPermissions() }
+                                                GeometryReader { geo in
+                                                    Rectangle()
+                                                        .fill(Color.red)
+                                                        .frame(width: 2, height: UIDevice.current.userInterfaceIdiom == .pad ? 350 : 280)
+                                                        .position(x: geo.size.width / 2, y: UIDevice.current.userInterfaceIdiom == .pad ? 175 : 140)
                                                 }
-                                                .padding(.horizontal, 16)
-                                                .padding(.vertical, 8)
-                                                .background(Color.blue)
-                                                .foregroundColor(.white)
-                                                .cornerRadius(8)
+                                                .allowsHitTesting(false)
+                                                .frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 350 : 280)
                                             }
+
+                                            // Timer
+                                            Text(timeString(from: elapsed, showMillis: true))
+                                                .font(.system(size: UIDevice.current.userInterfaceIdiom == .pad ? 42 : 36, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.primary)
+                                        }
+                                        .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 40 : 16)
+                                        .background(Color(.systemBackground))
+                                        .background(GeometryReader { geo in
+                                            Color.clear.preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
+                                        })
+
+                                        // Transcript section
+                                        VStack(alignment: .leading, spacing: 12) {
+                                            HStack {
+                                                Image(systemName: liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
+                                                    .foregroundColor(liveTranscriptActive ? .green : .blue)
+                                                Text("Live Transcript")
+                                                    .font(.headline)
+                                                    .fontWeight(.semibold)
+                                                Spacer()
+
+                                                if !transcriptPermissionGranted {
+                                                    Button("Enable") {
+                                                        Task { await requestTranscriptPermissions() }
+                                                    }
+                                                    .font(.caption)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(Color.blue)
+                                                    .foregroundColor(.white)
+                                                    .cornerRadius(8)
+                                                } else if !isRecording {
+                                                    Text("Will transcribe when recording starts")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                } else {
+                                                    HStack(spacing: 4) {
+                                                        Circle()
+                                                            .fill(liveTranscriptActive ? Color.green : Color.orange)
+                                                            .frame(width: 6, height: 6)
+                                                        Text(liveTranscriptActive ? "Transcribing" : "Ready")
+                                                            .font(.caption)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                }
+                                            }
+                                            .padding(.horizontal)
                                             .padding(.top, 20)
+
+                                            ScrollViewReader { scrollProxy in
+                                                ScrollView {
+                                                    LazyVStack(alignment: .leading, spacing: 8) {
+                                                        // Completed transcript lines
+                                                        ForEach(Array(transcriptLines.enumerated()), id: \.offset) { index, line in
+                                                            Text(line)
+                                                                .font(.body)
+                                                                .padding(.horizontal, 16)
+                                                                .padding(.vertical, 8)
+                                                                .background(Color(.secondarySystemBackground))
+                                                                .cornerRadius(8)
+                                                                .id("line-\(index)")
+                                                        }
+
+                                                        // Current partial text
+                                                        if !currentPartialText.isEmpty {
+                                                            Text(currentPartialText)
+                                                                .font(.body)
+                                                                .foregroundColor(.secondary)
+                                                                .padding(.horizontal, 16)
+                                                                .padding(.vertical, 8)
+                                                                .background(Color(.tertiarySystemBackground))
+                                                                .cornerRadius(8)
+                                                                .id("partial")
+                                                        }
+
+                                                        if transcriptLines.isEmpty && currentPartialText.isEmpty && transcriptPermissionGranted {
+                                                            VStack(spacing: 8) {
+                                                                Image(systemName: liveTranscriptActive ? "mic.circle.fill" : "mic.circle")
+                                                                    .font(.system(size: 40))
+                                                                    .foregroundColor(liveTranscriptActive ? .green : .secondary)
+                                                                Text(liveTranscriptActive ? "Listening for speech..." : (isRecording ? "Transcription starting..." : "Ready to transcribe"))
+                                                                    .font(.body)
+                                                                    .foregroundColor(.secondary)
+                                                            }
+                                                            .padding(.top, 40)
+                                                        }
+
+                                                        if !transcriptPermissionGranted {
+                                                            VStack(spacing: 12) {
+                                                                Image(systemName: "exclamationmark.triangle")
+                                                                    .font(.system(size: 32))
+                                                                    .foregroundColor(.orange)
+                                                                Text("Microphone and Speech Recognition permissions required for live transcript")
+                                                                    .font(.body)
+                                                                    .multilineTextAlignment(.center)
+                                                                    .foregroundColor(.secondary)
+                                                                Button("Grant Permissions") {
+                                                                    Task { await requestTranscriptPermissions() }
+                                                                }
+                                                                .padding(.horizontal, 16)
+                                                                .padding(.vertical, 8)
+                                                                .background(Color.blue)
+                                                                .foregroundColor(.white)
+                                                                .cornerRadius(8)
+                                                            }
+                                                            .padding(.top, 20)
+                                                        }
+                                                    }
+                                                }
+                                                .frame(minHeight: 200)
+                                                .onChange(of: transcriptLines.count) { _, _ in
+                                                    withAnimation(.easeOut(duration: 0.3)) {
+                                                        scrollProxy.scrollTo("line-\(transcriptLines.count - 1)", anchor: .bottom)
+                                                    }
+                                                }
+                                                .onChange(of: currentPartialText) { _, newValue in
+                                                    if !newValue.isEmpty {
+                                                        withAnimation(.easeOut(duration: 0.2)) {
+                                                            scrollProxy.scrollTo("partial", anchor: .bottom)
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
+                                        .padding(.horizontal)
+                                        .background(Color(.systemGroupedBackground))
+                                        .padding(.bottom, 120) // Space for controls
                                     }
                                 }
-                                .frame(minHeight: 200)
-                                .onChange(of: transcriptLines.count) { _, _ in
-                                    withAnimation(.easeOut(duration: 0.3)) {
-                                        scrollProxy.scrollTo("line-\(transcriptLines.count - 1)", anchor: .bottom)
-                                    }
-                                }
-                                .onChange(of: currentPartialText) { _, newValue in
-                                    if !newValue.isEmpty {
-                                        withAnimation(.easeOut(duration: 0.2)) {
-                                            scrollProxy.scrollTo("partial", anchor: .bottom)
-                                        }
+                                .coordinateSpace(name: "scroll")
+                                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                                    scrollOffset = value
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        showFloatingControls = value < -100
                                     }
                                 }
                             }
+                            .frame(maxWidth: min(geometry.size.width * 0.85, 900))
+
+                            Spacer()
                         }
-                        .padding(.horizontal)
-                        .background(Color(.systemGroupedBackground))
-                        .padding(.bottom, 120) // Space for controls
+                    }
+                    } else {
+                        // iPhone layout
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                VStack(spacing: 0) {
+                                // Fixed waveform section
+                                VStack(spacing: 16) {
+                                    Text("New Recording")
+                                        .font(.headline)
+                                        .bold()
+                                        .padding(.top, 16)
+
+                                    // Waveform container
+                                    ZStack(alignment: .top) {
+                                        Rectangle()
+                                            .fill(Color(.systemGray6))
+                                            .frame(height: 280)
+                                            .cornerRadius(16)
+
+                                        ReactiveScrollingWaveform(power: power, isActive: isRecording)
+                                            .frame(height: 280)
+                                            .padding(.horizontal, 16)
+
+                                        GeometryReader { geo in
+                                            Rectangle()
+                                                .fill(Color.red)
+                                                .frame(width: 2, height: 280)
+                                                .position(x: geo.size.width / 2, y: 140)
+                                        }
+                                        .allowsHitTesting(false)
+                                        .frame(height: 280)
+                                    }
+
+                                    // Timer
+                                    Text(timeString(from: elapsed, showMillis: true))
+                                        .font(.system(size: 36, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.primary)
+                                }
+                                .padding(.horizontal, 16)
+                                .background(Color(.systemBackground))
+                                .background(GeometryReader { geo in
+                                    Color.clear.preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
+                                })
+
+                                // Transcript section
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Image(systemName: liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
+                                            .foregroundColor(liveTranscriptActive ? .green : .blue)
+                                        Text("Live Transcript")
+                                            .font(.headline)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        
+                                        if !transcriptPermissionGranted {
+                                            Button("Enable") {
+                                                Task { await requestTranscriptPermissions() }
+                                            }
+                                            .font(.caption)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.blue)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(8)
+                                        } else if !isRecording {
+                                            Text("Will transcribe when recording starts")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Circle()
+                                                    .fill(liveTranscriptActive ? Color.green : Color.orange)
+                                                    .frame(width: 6, height: 6)
+                                                Text(liveTranscriptActive ? "Transcribing" : "Ready")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                    .padding(.top, 20)
+
+                                    ScrollViewReader { scrollProxy in
+                                        ScrollView {
+                                            LazyVStack(alignment: .leading, spacing: 8) {
+                                                // Completed transcript lines
+                                                ForEach(Array(transcriptLines.enumerated()), id: \.offset) { index, line in
+                                                    Text(line)
+                                                        .font(.body)
+                                                        .padding(.horizontal, 16)
+                                                        .padding(.vertical, 8)
+                                                        .background(Color(.secondarySystemBackground))
+                                                        .cornerRadius(8)
+                                                        .id("line-\(index)")
+                                                }
+
+                                                // Current partial text
+                                                if !currentPartialText.isEmpty {
+                                                    Text(currentPartialText)
+                                                        .font(.body)
+                                                        .foregroundColor(.secondary)
+                                                        .padding(.horizontal, 16)
+                                                        .padding(.vertical, 8)
+                                                        .background(Color(.tertiarySystemBackground))
+                                                        .cornerRadius(8)
+                                                        .id("partial")
+                                                }
+
+                                                if transcriptLines.isEmpty && currentPartialText.isEmpty && transcriptPermissionGranted {
+                                                    VStack(spacing: 8) {
+                                                        Image(systemName: liveTranscriptActive ? "mic.circle.fill" : "mic.circle")
+                                                            .font(.system(size: 40))
+                                                            .foregroundColor(liveTranscriptActive ? .green : .secondary)
+                                                        Text(liveTranscriptActive ? "Listening for speech..." : (isRecording ? "Transcription starting..." : "Ready to transcribe"))
+                                                            .font(.body)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .padding(.top, 40)
+                                                }
+
+                                                if !transcriptPermissionGranted {
+                                                    VStack(spacing: 12) {
+                                                        Image(systemName: "exclamationmark.triangle")
+                                                            .font(.system(size: 32))
+                                                            .foregroundColor(.orange)
+                                                        Text("Microphone and Speech Recognition permissions required for live transcript")
+                                                            .font(.body)
+                                                            .multilineTextAlignment(.center)
+                                                            .foregroundColor(.secondary)
+                                                        Button("Grant Permissions") {
+                                                            Task { await requestTranscriptPermissions() }
+                                                        }
+                                                        .padding(.horizontal, 16)
+                                                        .padding(.vertical, 8)
+                                                        .background(Color.blue)
+                                                        .foregroundColor(.white)
+                                                        .cornerRadius(8)
+                                                    }
+                                                    .padding(.top, 20)
+                                                }
+                                            }
+                                        }
+                                        .frame(minHeight: 200)
+                                        .onChange(of: transcriptLines.count) { _, _ in
+                                            withAnimation(.easeOut(duration: 0.3)) {
+                                                scrollProxy.scrollTo("line-\(transcriptLines.count - 1)", anchor: .bottom)
+                                            }
+                                        }
+                                        .onChange(of: currentPartialText) { _, newValue in
+                                            if !newValue.isEmpty {
+                                                withAnimation(.easeOut(duration: 0.2)) {
+                                                    scrollProxy.scrollTo("partial", anchor: .bottom)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal)
+                                .background(Color(.systemGroupedBackground))
+                                .padding(.bottom, 120) // Space for controls
+                                }
+                            }
+                            .coordinateSpace(name: "scroll")
+                            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                                scrollOffset = value
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showFloatingControls = value < -100
+                                }
+                            }
+                        }
                     }
                 }
-                .coordinateSpace(name: "scroll")
-                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                    scrollOffset = value
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showFloatingControls = value < -100
-                    }
-                }
+
             }
 
             // Floating controls when scrolled
@@ -367,8 +553,7 @@ struct RecordingView: View {
                 }
             }
         }
-        } // NavigationView closing brace
-    }
+        } // NavigationStack closing brace
 
     private var defaultTitle: String { "Session " + Date.now.formatted(date: .abbreviated, time: .shortened) }
 
@@ -610,7 +795,6 @@ struct RecordingView: View {
             return String(format: "%02d:%02d", minutes, seconds)
         }
     }
-}
 
 // MARK: - Supporting Views and Preferences
 
@@ -669,4 +853,6 @@ struct ReactiveScrollingWaveform: View {
         }
     }
 }
+
+} // RecordingView struct closing brace
 

@@ -48,7 +48,7 @@ struct TutorialView: View {
                     TabView(selection: $page) {
                         ForEach(Array(vm.pages.enumerated()), id: \.offset) { idx, p in
                             OnboardingCard(imageName: p.imageName, title: p.title, description: p.description, isCurrent: idx == page)
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 60 : 20)
                                 .tag(idx)
                         }
                     }

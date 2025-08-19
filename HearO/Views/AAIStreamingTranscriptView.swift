@@ -23,27 +23,52 @@ struct AAIStreamingTranscriptView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                ScrollView {
-                    Text(transcript.isEmpty ? (isStreaming ? "Listening…" : "Tap Start to begin streaming") : transcript)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                // iPad centered layout
+                GeometryReader { geometry in
+                    HStack {
+                        Spacer()
+                        
+                        VStack(alignment: .leading, spacing: 16) {
+                            ScrollView {
+                                Text(transcript.isEmpty ? (isStreaming ? "Listening…" : "Tap Start to begin streaming") : transcript)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding()
+                            }
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                            if let errorMessage { Text(errorMessage).foregroundColor(.red).font(.footnote) }
+                            Spacer()
+                        }
+                        .padding(24)
+                        .frame(maxWidth: min(geometry.size.width * 0.8, 900))
+                        
+                        Spacer()
+                    }
                 }
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
-                if let errorMessage { Text(errorMessage).foregroundColor(.red).font(.footnote) }
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Live Transcript (AAI)")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(isStreaming ? "Stop" : "Start") { toggle() }.disabled(!isAuthorized)
+            } else {
+                // iPhone layout
+                VStack(alignment: .leading, spacing: 16) {
+                    ScrollView {
+                        Text(transcript.isEmpty ? (isStreaming ? "Listening…" : "Tap Start to begin streaming") : transcript)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                    }
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    if let errorMessage { Text(errorMessage).foregroundColor(.red).font(.footnote) }
+                    Spacer()
                 }
+                .padding(16)
             }
-            .onAppear { Task { await preparePermissions() } }
-            .onDisappear { stopStreaming() }
         }
+        .navigationTitle("Live Transcript (AAI)")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(isStreaming ? "Stop" : "Start") { toggle() }.disabled(!isAuthorized)
+            }
+        }
+        .onAppear { Task { await preparePermissions() } }
+        .onDisappear { stopStreaming() }
     }
 
     private func toggle() {

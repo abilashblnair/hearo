@@ -31,20 +31,37 @@ struct HomeView: View {
 struct RecordTab: View {
     @Binding var showRecordingSheet: Bool
     var body: some View {
-        NavigationView {
-            RecordListView(showRecordingSheet: $showRecordingSheet)
-                .navigationTitle("Record")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: { showRecordingSheet = true }) {
-                            Image(systemName: "record.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundColor(.accentColor)
+        NavigationStack {
+            Group {
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    // iPad centered layout
+                    GeometryReader { geometry in
+                        HStack {
+                            Spacer()
+                            
+                            RecordListView(showRecordingSheet: $showRecordingSheet)
+                                .frame(maxWidth: min(geometry.size.width * 0.85, 1000))
+                            
+                            Spacer()
                         }
-                        .accessibilityLabel("Start Recording")
                     }
+                } else {
+                    // iPhone layout
+                    RecordListView(showRecordingSheet: $showRecordingSheet)
                 }
+            }
+            .navigationTitle("Record")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showRecordingSheet = true }) {
+                        Image(systemName: "record.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(.accentColor)
+                    }
+                    .accessibilityLabel("Start Recording")
+                }
+            }
         }
     }
 }
