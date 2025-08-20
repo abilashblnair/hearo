@@ -9,6 +9,7 @@ final class ServiceContainer: ObservableObject {
     let sessions: SessionRepository
     let tts: GoogleCloudTTSManager
     let adManager: AdManagerProtocol
+    let notifications: LocalNotificationService
     
     init(audio: AudioRecordingService,
          transcription: TranscriptionService,
@@ -17,7 +18,8 @@ final class ServiceContainer: ObservableObject {
          pdf: PDFService,
          sessions: SessionRepository,
          tts: GoogleCloudTTSManager,
-         adManager: AdManagerProtocol) {
+         adManager: AdManagerProtocol,
+         notifications: LocalNotificationService) {
         self.audio = audio
         self.transcription = transcription
         self.summarization = summarization
@@ -26,9 +28,11 @@ final class ServiceContainer: ObservableObject {
         self.sessions = sessions
         self.tts = tts
         self.adManager = adManager
+        self.notifications = notifications
     }
     
     /// Factory method to create default services with proper configuration
+    @MainActor
     static func create() -> ServiceContainer {
         let gptService = GPTSummarizationServiceImpl(apiKey: Secrets.openAIKey)
         let adManager = GoogleAdManager()
@@ -41,7 +45,8 @@ final class ServiceContainer: ObservableObject {
             pdf: PDFKitServiceImpl(),
             sessions: LocalSessionRepository(),
             tts: GoogleCloudTTSManager.shared,
-            adManager: adManager
+            adManager: adManager,
+            notifications: LocalNotificationService.shared
         )
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Speech
+import UIKit
 
 /// Unified audio session manager that coordinates between recording and live transcription
 final class AudioSessionManager: NSObject {
@@ -111,7 +112,7 @@ final class AudioSessionManager: NSObject {
         if !configurationSuccess {
             print("🔄 Trying Configuration 1: Full featured...")
             do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers, .duckOthers])
                 try audioSession.setPreferredSampleRate(44100.0)
                 try audioSession.setPreferredInputNumberOfChannels(1)
                 try audioSession.setPreferredIOBufferDuration(0.02)
@@ -127,7 +128,7 @@ final class AudioSessionManager: NSObject {
         if !configurationSuccess {
             print("🔄 Trying Configuration 2: Simplified options...")
             do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [])
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers])
                 try audioSession.setPreferredSampleRate(44100.0)
                 try audioSession.setPreferredInputNumberOfChannels(1)
                 try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
@@ -142,7 +143,7 @@ final class AudioSessionManager: NSObject {
         if !configurationSuccess {
             print("🔄 Trying Configuration 3: System defaults...")
             do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [])
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers])
                 try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
                 configurationSuccess = true
                 print("✅ Configuration 3 successful!")
@@ -553,13 +554,8 @@ final class AudioSessionManager: NSObject {
         // AND if this wasn't called from stopRecording (which handles engine cleanup)
         if !isRecordingActive {
             print("🔊 Stopping audio engine (recording not active)...")
-            do {
-                inputNode.removeTap(onBus: 0)
-                print("✅ Audio tap removed")
-            } catch {
-                print("⚠️ Error removing audio tap: \(error)")
-            }
-            
+            inputNode.removeTap(onBus: 0)
+
             if audioEngine.isRunning {
                 audioEngine.stop()
                 print("🛑 Audio engine stopped")
@@ -618,11 +614,7 @@ final class AudioSessionManager: NSObject {
         // Stop audio engine safely
         if audioEngine.isRunning {
             // Remove taps first to avoid crashes
-            do {
-                inputNode.removeTap(onBus: 0)
-            } catch {
-                print("⚠️ Error removing tap: \(error)")
-            }
+            inputNode.removeTap(onBus: 0)
             audioEngine.stop()
             print("🛑 Audio engine stopped")
         }
@@ -678,6 +670,35 @@ final class AudioSessionManager: NSObject {
             name: AVAudioSession.routeChangeNotification,
             object: audioSession
         )
+        
+        // Background/Foreground notifications for continuous recording
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
     }
     
     @objc private func handleInterruption(notification: Notification) {
@@ -719,6 +740,62 @@ final class AudioSessionManager: NSObject {
             }
         default:
             break
+        }
+    }
+    
+    // MARK: - Background/Foreground Handlers
+    
+    @objc private func handleAppWillResignActive() {
+        print("🔄 App will resign active - preparing for background")
+        // Keep audio session active for background recording
+        if isRecordingActive || transcriptionEnabled {
+            print("📱 Maintaining audio session for background recording/transcription")
+            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        }
+    }
+    
+    @objc private func handleAppDidBecomeActive() {
+        print("🔄 App became active - resuming from background")
+        // Ensure audio session is still active
+        if isRecordingActive || transcriptionEnabled {
+            print("📱 Reactivating audio session from background")
+            try? configureAudioSession()
+        }
+    }
+    
+    @objc private func handleAppDidEnterBackground() {
+        print("🔄 App entered background")
+        if isRecordingActive {
+            print("🎙️ Recording continues in background...")
+        }
+        if transcriptionEnabled {
+            print("🗣️ Transcription continues in background...")
+        }
+        
+        // Ensure audio session stays active for background recording
+        if isRecordingActive || transcriptionEnabled {
+            do {
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                print("✅ Audio session maintained for background operation")
+            } catch {
+                print("❌ Failed to maintain audio session in background: \(error)")
+                onError?(error)
+            }
+        }
+    }
+    
+    @objc private func handleAppWillEnterForeground() {
+        print("🔄 App will enter foreground")
+        // Refresh audio session configuration
+        if isRecordingActive || transcriptionEnabled {
+            print("📱 Refreshing audio session for foreground")
+            do {
+                try configureAudioSession()
+                print("✅ Audio session refreshed for foreground")
+            } catch {
+                print("❌ Failed to refresh audio session: \(error)")
+                onError?(error)
+            }
         }
     }
     

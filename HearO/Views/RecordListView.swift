@@ -16,6 +16,9 @@ struct RecordListView: View {
     @EnvironmentObject var di: ServiceContainer
     @Environment(\.modelContext) private var modelContext
     @Binding var showRecordingSheet: Bool
+    @Binding var navigateToTranscript: Bool
+    @Binding var currentTranscriptSession: Session?
+    @Binding var currentTranscriptRecording: Recording?
 
     @State private var recordings: [Recording] = []
     @State private var isLoading = true
@@ -42,15 +45,34 @@ struct RecordListView: View {
     @State private var transcribeError: String? = nil
     @State private var transcriptText: String = ""
     @State private var transcriptSegments: [TranscriptSegment] = []
-    @State private var currentTranscriptSession: Session?
-    @State private var currentTranscriptRecording: Recording?
-    @State private var navigateToTranscript: Bool = false
+    
+    // Multi-selection and management state
+    @State private var isMultiSelectMode: Bool = false
+    @State private var selectedRecordings: Set<UUID> = []
+    @State private var showingRenameDialog: Bool = false
+    @State private var renamingRecording: Recording? = nil
+    @State private var newRecordingName: String = ""
+    @State private var showingShareSheet: Bool = false
+    @State private var shareItems: [Any] = []
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+        ZStack {
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
+            VStack(spacing: 0) {
+                // Multi-select toolbar
+                if isMultiSelectMode {
+                    multiSelectToolbar
+                        .background(Color(.systemBackground))
+                        .overlay(
+                            Rectangle()
+                                .frame(height: 0.5)
+                                .foregroundColor(Color(.separator)),
+                            alignment: .bottom
+                        )
+                }
+                
+                // Main content
                 VStack(spacing: 12) {
                     // Lightweight header so the screen never looks empty
                     if isLoading {
@@ -59,21 +81,22 @@ struct RecordListView: View {
                         recordList
                     }
                 }
+            }
 
-                // Pre-recorded transcription progress
-                if isTranscribing {
-                    ZStack {
-                        Color.black.opacity(0.3).ignoresSafeArea()
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("Transcribing…").font(.footnote).foregroundColor(.secondary)
-                        }
-                        .padding(16)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
+            // Pre-recorded transcription progress
+            if isTranscribing {
+                ZStack {
+                    Color.black.opacity(0.3).ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Transcribing…").font(.footnote).foregroundColor(.secondary)
                     }
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
                 }
             }
+        }
             .onAppear {
                 Task { await loadRecordings() }
                 playerDelegate.onFinish = {
@@ -82,7 +105,7 @@ struct RecordListView: View {
                     playbackTime = 0
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
-                
+
                 // Ensure any recording session is properly cleaned up
                 if !di.audio.isRecording {
                     di.audio.deactivateSessionIfNeeded()
@@ -118,90 +141,48 @@ struct RecordListView: View {
             } message: {
                 Text(transcribeError ?? "")
             }
-            .navigationDestination(isPresented: $navigateToTranscript) {
-                if let session = currentTranscriptSession, let recording = currentTranscriptRecording {
-                    TranscriptResultView(session: session, recording: recording)
+            .alert("Rename Recording", isPresented: $showingRenameDialog) {
+                TextField("Recording name", text: $newRecordingName)
+                Button("Rename") { renameCurrentRecording() }
+                Button("Cancel", role: .cancel) { cancelRename() }
+            } message: {
+                Text("Enter a new name for your recording")
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                if #available(iOS 16.0, *) {
+                    ShareSheet(items: shareItems)
                 } else {
-                    Text("No transcript available")
-                        .foregroundColor(.secondary)
+                    ActivityViewController(activityItems: shareItems)
                 }
             }
-        }
+
     }
     // MARK: - Record List
 
     private var recordList: some View {
-        List {
-            ForEach(recordings) { rec in
-                // Compute per-row playback state and total duration source
-                let isRowPlaying = (playingID == rec.id && isPlaying)
-                let totalDuration: TimeInterval = (isRowPlaying ? (player?.duration ?? rec.duration) : rec.duration)
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Button(action: { togglePlayback(for: rec) }) {
-                            Image(systemName: isRowPlaying ? "pause.fill" : "play.fill")
-                                .font(.title3)
-                                .contentTransition(.symbolEffect(.replace))
-                        }.padding(.horizontal, 8)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(rec.title).font(.body)
-                            Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        // Quick action button to transcribe or view transcript
-                        Button(action: { Task { await transcribeRecording(rec) } }) {
-                            HStack(spacing: 4) {
-                                if transcribingRecordingID == rec.id {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                } else {
-                                    Image(systemName: rec.hasTranscript ? "text.bubble.fill" : "text.bubble")
-                                        .foregroundColor(rec.hasTranscript ? .green : .accentColor)
-                                }
-                                
-                                if transcribingRecordingID == rec.id {
-                                    Text("Loading...")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else if rec.hasTranscript {
-                                    Text("View")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                } else {
-                                    Text("Transcribe")
-                                        .font(.caption)
-                                        .foregroundColor(.accentColor)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isTranscribing)
-                        .opacity(isTranscribing ? 0.5 : 1.0)
-                    }
-                    if playingID == rec.id {
-                        HStack(spacing: 8) {
-                            Text(format(duration: playbackTime))
-                                .font(.caption.monospacedDigit())
-                                .foregroundColor(.secondary)
-                            Slider(value: Binding(
-                                get: { min(playbackTime, totalDuration) },
-                                set: { newVal in
-                                    let clamped = max(0, min(newVal, totalDuration))
-                                    playbackTime = clamped
-                                    if let player = player { player.currentTime = clamped }
-                                }
-                            ), in: 0...max(0.1, totalDuration))
-                            Text(format(duration: totalDuration))
-                                .font(.caption.monospacedDigit())
-                                .foregroundColor(.secondary)
-                        }
+        Group {
+            if isMultiSelectMode {
+                List(selection: $selectedRecordings) {
+                    ForEach(recordings) { rec in
+                        recordingRow(for: rec)
+                            .listRowSeparator(.visible)
                     }
                 }
-                .listRowSeparator(.visible)
+            } else {
+                List {
+                    ForEach(recordings) { rec in
+                        recordingRow(for: rec)
+                            .listRowSeparator(.visible)
+                            .contentShape(Rectangle())
+                            .onLongPressGesture {
+                                enterMultiSelectMode()
+                                selectedRecordings.insert(rec.id)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            }
+                    }
+                    .onDelete(perform: delete)
+                }
             }
-            .onDelete(perform: delete)
         }
         .listStyle(.insetGrouped)
         .animation(.spring(response: 0.45, dampingFraction: 0.86), value: recordings)
@@ -220,6 +201,173 @@ struct RecordListView: View {
             }
         }
     }
+    
+    // MARK: - Recording Row
+    
+    @ViewBuilder
+    private func recordingRow(for rec: Recording) -> some View {
+        let isRowPlaying = (playingID == rec.id && isPlaying)
+        let totalDuration: TimeInterval = (isRowPlaying ? (player?.duration ?? rec.duration) : rec.duration)
+        let isSelected = selectedRecordings.contains(rec.id)
+        
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                // Multi-select checkbox
+                if isMultiSelectMode {
+                    Button(action: { toggleSelection(for: rec) }) {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.title2)
+                            .foregroundColor(isSelected ? .accentColor : .secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.horizontal, 4)
+                } else {
+                    // Play/pause button
+                    Button(action: { 
+                        print("🎵 Play button tapped for: \(rec.title)")
+                        togglePlayback(for: rec) 
+                    }) {
+                        Image(systemName: isRowPlaying ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.horizontal, 8)
+                }
+                
+                // Recording info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rec.title).font(.body)
+                    Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if !isMultiSelectMode {
+                    // Transcribe button
+                    Button(action: { Task { await transcribeRecording(rec) } }) {
+                        HStack(spacing: 4) {
+                            if transcribingRecordingID == rec.id {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: rec.hasTranscript ? "text.bubble.fill" : "text.bubble")
+                                    .foregroundColor(rec.hasTranscript ? .green : .accentColor)
+                            }
+
+                            if transcribingRecordingID == rec.id {
+                                Text("Loading...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if rec.hasTranscript {
+                                Text("View")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("Transcribe")
+                                    .font(.caption)
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isTranscribing)
+                    .opacity(isTranscribing ? 0.5 : 1.0)
+                    
+                    // 3-dot menu  
+                    Menu {
+                        Button(action: { startRename(rec) }) {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        
+                        Button(action: { shareRecording(rec) }) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        
+                        Divider()
+                        
+                        Button(role: .destructive, action: { deleteRecording(rec) }) {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.title3)
+                            .foregroundColor(.secondary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            
+            // Playback controls
+            if playingID == rec.id && !isMultiSelectMode {
+                HStack(spacing: 8) {
+                    Text(format(duration: playbackTime))
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    Slider(value: Binding(
+                        get: { min(playbackTime, totalDuration) },
+                        set: { newVal in
+                            let clamped = max(0, min(newVal, totalDuration))
+                            playbackTime = clamped
+                            if let player = player { player.currentTime = clamped }
+                        }
+                    ), in: 0...max(0.1, totalDuration))
+                    Text(format(duration: totalDuration))
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
+    }
+    
+    // MARK: - Multi-Select Toolbar
+    
+    private var multiSelectToolbar: some View {
+        HStack {
+            Button("Cancel") {
+                exitMultiSelectMode()
+            }
+            .foregroundColor(.accentColor)
+            
+            Spacer()
+            
+            Text("\(selectedRecordings.count) selected")
+                .font(.headline)
+                .foregroundColor(.primary)
+            
+            Spacer()
+            
+            HStack(spacing: 16) {
+                if !selectedRecordings.isEmpty {
+                    Button(action: shareSelectedRecordings) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title3)
+                    }
+                    .disabled(selectedRecordings.isEmpty)
+                    
+                    Button(action: deleteSelectedRecordings) {
+                        Image(systemName: "trash")
+                            .font(.title3)
+                            .foregroundColor(.red)
+                    }
+                    .disabled(selectedRecordings.isEmpty)
+                } else {
+                    Button("Select All") {
+                        selectedRecordings = Set(recordings.map { $0.id })
+                    }
+                    .foregroundColor(.accentColor)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
 
     // MARK: - Transcription (pre-recorded)
     @MainActor
@@ -231,15 +379,15 @@ struct RecordListView: View {
         transcriptSegments = []
         currentTranscriptSession = nil
         currentTranscriptRecording = nil
-        defer { 
+        defer {
             isTranscribing = false
             transcribingRecordingID = nil
         }
-        
+
         do {
             let segments: [TranscriptSegment]
             let languageCode = "en"
-            
+
             // Check if transcript is already cached
             if rec.hasTranscript, let cachedSegments = rec.getCachedTranscriptSegments() {
                 print("📋 Using cached transcript for recording: \(rec.title)")
@@ -247,19 +395,19 @@ struct RecordListView: View {
             } else {
                 print("🌐 Fetching transcript from API for recording: \(rec.title)")
                 segments = try await di.transcription.transcribe(audioURL: rec.finalAudioURL(), languageCode: languageCode)
-                
+
                 // Cache the transcript in the Recording model
                 rec.cacheTranscript(segments: segments, language: languageCode)
-                
+
                 // Save to persistent storage
                 try modelContext.save()
-                
+
                 print("💾 Cached transcript for recording: \(rec.title)")
             }
-            
+
             transcriptText = segments.map { $0.text }.joined(separator: "\n")
             transcriptSegments = segments
-            
+
             // Create a temporary Session object for the transcript view
             currentTranscriptSession = Session(
                 id: rec.id,
@@ -272,21 +420,159 @@ struct RecordListView: View {
                 highlights: nil,
                 summary: nil
             )
-            
+
             // Store the recording reference for caching
             currentTranscriptRecording = rec
-            
+
             // Pause any playing audio before navigating
             if let player = player, isPlaying {
                 player.pause()
                 isPlaying = false
                 setPlaybackSessionActive(false)
             }
-            
+
             navigateToTranscript = true
         } catch {
             transcribeError = error.localizedDescription
         }
+    }
+    
+    // MARK: - Multi-Selection & Menu Actions
+    
+    private func enterMultiSelectMode() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isMultiSelectMode = true
+            selectedRecordings.removeAll()
+        }
+    }
+    
+    private func exitMultiSelectMode() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isMultiSelectMode = false
+            selectedRecordings.removeAll()
+        }
+    }
+    
+    private func toggleSelection(for recording: Recording) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if selectedRecordings.contains(recording.id) {
+                selectedRecordings.remove(recording.id)
+            } else {
+                selectedRecordings.insert(recording.id)
+            }
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    private func startRename(_ recording: Recording) {
+        renamingRecording = recording
+        newRecordingName = recording.title
+        showingRenameDialog = true
+    }
+    
+    private func renameCurrentRecording() {
+        guard let recording = renamingRecording else { return }
+        let trimmedName = newRecordingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedName.isEmpty {
+            renameRecording(recording, newName: trimmedName)
+        }
+        cancelRename()
+    }
+    
+    private func cancelRename() {
+        renamingRecording = nil
+        newRecordingName = ""
+        showingRenameDialog = false
+    }
+    
+    private func renameRecording(_ recording: Recording, newName: String) {
+        // Update the recording title
+        recording.title = newName
+        
+        // Save to context
+        do {
+            try modelContext.save()
+            // Reload recordings to reflect the change
+            Task { await loadRecordings() }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            print("Failed to save renamed recording: \(error)")
+        }
+    }
+    
+    private func shareRecording(_ recording: Recording) {
+        let audioURL = recording.finalAudioURL()
+        shareItems = [audioURL]
+        showingShareSheet = true
+    }
+    
+    private func shareSelectedRecordings() {
+        let urls = recordings.filter { selectedRecordings.contains($0.id) }
+                            .map { $0.finalAudioURL() }
+        shareItems = urls
+        showingShareSheet = true
+    }
+    
+    private func deleteRecording(_ recording: Recording) {
+        // Stop playback if this recording is currently playing
+        if playingID == recording.id {
+            player?.stop()
+            isPlaying = false
+            playingID = nil
+            setPlaybackSessionActive(false)
+        }
+        
+        // Delete from storage
+        let store = RecordingDataStore(context: modelContext)
+        do {
+            try FileManager.default.removeItem(at: recording.finalAudioURL())
+            try store.deleteRecording(recording)
+            
+            // Remove from local array
+            withAnimation {
+                if let index = recordings.firstIndex(where: { $0.id == recording.id }) {
+                    recordings.remove(at: index)
+                }
+            }
+            
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            print("Failed to delete recording: \(error)")
+        }
+    }
+    
+    private func deleteSelectedRecordings() {
+        let recordingsToDelete = recordings.filter { selectedRecordings.contains($0.id) }
+        
+        // Stop playback if current item is being deleted
+        if let currentID = playingID, selectedRecordings.contains(currentID) {
+            player?.stop()
+            isPlaying = false
+            playingID = nil
+            setPlaybackSessionActive(false)
+        }
+        
+        let store = RecordingDataStore(context: modelContext)
+        
+        withAnimation {
+            // Remove from local array first for immediate UI feedback
+            recordings.removeAll { selectedRecordings.contains($0.id) }
+        }
+        
+        // Delete files and database records
+        for recording in recordingsToDelete {
+            do {
+                try FileManager.default.removeItem(at: recording.finalAudioURL())
+                try store.deleteRecording(recording)
+            } catch {
+                print("Failed to delete recording \(recording.title): \(error)")
+            }
+        }
+        
+        exitMultiSelectMode()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     // MARK: - Mini Recorder (Bottom)
@@ -408,67 +694,63 @@ struct RecordListView: View {
     }
 
     private func togglePlayback(for rec: Recording) {
-        do {
-            if playingID == rec.id, let player = player {
-                if isPlaying {
-                    player.pause()
-                    isPlaying = false
-                    setPlaybackSessionActive(false)
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                } else {
-                    setPlaybackSessionActive(true)
-                    player.play()
-                    isPlaying = true
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                }
-            } else {
-                // Stop any current player and reset state immediately
-                player?.stop()
-                player = nil
+        if playingID == rec.id, let player = player {
+            if isPlaying {
+                player.pause()
                 isPlaying = false
-                playingID = nil
-                playbackTime = 0
-                
-                // Setup new player asynchronously to avoid blocking UI
-                Task { @MainActor in
-                    do {
-                        let newPlayer = try AVAudioPlayer(contentsOf: rec.finalAudioURL())
-                        newPlayer.delegate = playerDelegate
-                        newPlayer.prepareToPlay()
-                        
-                        // Set playback session and start playing
-                        setPlaybackSessionActive(true)
-                        
-                        if newPlayer.play() {
-                            player = newPlayer
-                            playingID = rec.id
-                            isPlaying = true
-                            playbackTime = 0
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        } else {
-                            throw NSError(domain: "PlaybackError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to start playback"])
-                        }
+                setPlaybackSessionActive(false)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } else {
+                setPlaybackSessionActive(true)
+                player.play()
+                isPlaying = true
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+        } else {
+            // Stop any current player and reset state immediately
+            player?.stop()
+            player = nil
+            isPlaying = false
+            playingID = nil
+            playbackTime = 0
 
-                        // Ensure we deactivate session on finish
-                        playerDelegate.onFinish = {
-                            setPlaybackSessionActive(false)
-                            isPlaying = false
-                            playingID = nil
-                            playbackTime = 0
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        }
-                    } catch {
-                        UINotificationFeedbackGenerator().notificationOccurred(.error)
-                        print("Playback error: \(error)")
-                        // Reset states on error
+            // Setup new player asynchronously to avoid blocking UI
+            Task { @MainActor in
+                do {
+                    let newPlayer = try AVAudioPlayer(contentsOf: rec.finalAudioURL())
+                    newPlayer.delegate = playerDelegate
+                    newPlayer.prepareToPlay()
+
+                    // Set playback session and start playing
+                    setPlaybackSessionActive(true)
+
+                    if newPlayer.play() {
+                        player = newPlayer
+                        playingID = rec.id
+                        isPlaying = true
+                        playbackTime = 0
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } else {
+                        throw NSError(domain: "PlaybackError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to start playback"])
+                    }
+
+                    // Ensure we deactivate session on finish
+                    playerDelegate.onFinish = {
+                        setPlaybackSessionActive(false)
                         isPlaying = false
                         playingID = nil
-                        player = nil
+                        playbackTime = 0
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
+                } catch {
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    print("Playback error: \(error)")
+                    // Reset states on error
+                    isPlaying = false
+                    playingID = nil
+                    player = nil
                 }
             }
-        } catch {
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 
@@ -517,5 +799,20 @@ struct RecordListView: View {
                 print("Playback session error: \(error)")
             }
         }
+    }
+}
+
+// MARK: - Share Sheet Components
+
+@available(iOS 16.0, *)
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // No updates needed
     }
 }

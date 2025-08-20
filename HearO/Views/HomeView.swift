@@ -30,6 +30,12 @@ struct HomeView: View {
 
 struct RecordTab: View {
     @Binding var showRecordingSheet: Bool
+    
+    // Navigation state for transcript viewing
+    @State private var navigateToTranscript: Bool = false
+    @State private var currentTranscriptSession: Session?
+    @State private var currentTranscriptRecording: Recording?
+    
     var body: some View {
         NavigationStack {
             Group {
@@ -39,15 +45,25 @@ struct RecordTab: View {
                         HStack {
                             Spacer()
                             
-                            RecordListView(showRecordingSheet: $showRecordingSheet)
-                                .frame(maxWidth: min(geometry.size.width * 0.85, 1000))
+                            RecordListView(
+                                showRecordingSheet: $showRecordingSheet,
+                                navigateToTranscript: $navigateToTranscript,
+                                currentTranscriptSession: $currentTranscriptSession,
+                                currentTranscriptRecording: $currentTranscriptRecording
+                            )
+                            .frame(maxWidth: min(geometry.size.width * 0.85, 1000))
                             
                             Spacer()
                         }
                     }
                 } else {
                     // iPhone layout
-                    RecordListView(showRecordingSheet: $showRecordingSheet)
+                    RecordListView(
+                        showRecordingSheet: $showRecordingSheet,
+                        navigateToTranscript: $navigateToTranscript,
+                        currentTranscriptSession: $currentTranscriptSession,
+                        currentTranscriptRecording: $currentTranscriptRecording
+                    )
                 }
             }
             .navigationTitle("Record")
@@ -60,6 +76,14 @@ struct RecordTab: View {
                             .foregroundColor(.accentColor)
                     }
                     .accessibilityLabel("Start Recording")
+                }
+            }
+            .navigationDestination(isPresented: $navigateToTranscript) {
+                if let session = currentTranscriptSession, let recording = currentTranscriptRecording {
+                    TranscriptResultView(session: session, recording: recording)
+                } else {
+                    Text("No transcript available")
+                        .foregroundColor(.secondary)
                 }
             }
         }

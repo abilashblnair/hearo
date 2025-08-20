@@ -603,7 +603,13 @@ struct RecordingView: View {
             // Set up audio service callbacks
             setupAudioCallbacks()
             
+            // Set up notification action observers
+            setupNotificationObservers()
+            
             Task {
+                // Request notification permissions
+                _ = await di.notifications.requestPermissions()
+                
                 // First request permissions for transcription
                 await requestTranscriptPermissions()
                 // Then start or attach to recording session
@@ -654,6 +660,20 @@ struct RecordingView: View {
 
     private var defaultTitle: String { "Session " + Date.now.formatted(date: .abbreviated, time: .shortened) }
 
+    // MARK: - Notification Functions
+    
+    private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(
+            forName: .stopRecordingFromNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await self.stopAndPrompt()
+            }
+        }
+    }
+    
     // MARK: - Transcript Functions
     
     private func setupAudioCallbacks() {
@@ -786,6 +806,9 @@ struct RecordingView: View {
             elapsed = 0
             startTimers()
             
+            // Start notification updates
+            di.notifications.startRecordingNotifications(title: "New Recording")
+            
         } catch { 
             self.error = error.localizedDescription 
         }
@@ -815,6 +838,9 @@ struct RecordingView: View {
             isRecording = false
             stopTimers()
             
+            // Stop notification updates
+            di.notifications.stopRecordingNotifications()
+            
             // Clean up transcription if active
             if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
                 unifiedService.disableTranscription()
@@ -842,6 +868,9 @@ struct RecordingView: View {
             _ = try di.audio.stopRecording()
             isRecording = false
             stopTimers()
+            
+            // Stop notification updates
+            di.notifications.stopRecordingNotifications()
             
             // Clean up transcription if active
             if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {

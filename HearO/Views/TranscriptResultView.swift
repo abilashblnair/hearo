@@ -50,7 +50,8 @@ struct TranscriptResultView: View {
                         VStack(spacing: 0) {
                             // Action buttons header
                             actionButtonsView
-                                .padding()
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
                                 .background(Color(.secondarySystemGroupedBackground))
                                 .opacity(animateButtons ? 1 : 0)
                                 .offset(y: animateButtons ? 0 : -10)
@@ -69,7 +70,8 @@ struct TranscriptResultView: View {
                 VStack(spacing: 0) {
                     // Action buttons header
                     actionButtonsView
-                        .padding()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                         .background(Color(.secondarySystemGroupedBackground))
                         .opacity(animateButtons ? 1 : 0)
                         .offset(y: animateButtons ? 0 : -10)
@@ -86,9 +88,10 @@ struct TranscriptResultView: View {
         .navigationDestination(isPresented: $navigateToLanguageSelection) {
             LanguageSelectionView(selectedLanguage: selectedTargetLanguage) { language in
                 selectedTargetLanguage = language
-                // Reset navigation state immediately to prevent navigation issues
-                navigateToLanguageSelection = false
-                Task {
+                
+                // Reset navigation state and handle translation
+                Task { @MainActor in
+                    navigateToLanguageSelection = false
                     await translateTranscript(to: language.name)
                 }
             }
@@ -128,6 +131,12 @@ struct TranscriptResultView: View {
                     return await translateTranscriptForLanguageChange(to: newLanguage.name)
                 }
             )
+            .onDisappear {
+                // Clean up navigation state when returning from translation view
+                Task { @MainActor in
+                    navigateToTranslation = false
+                }
+            }
         }
 
         .alert("Error", isPresented: $showingError) {
@@ -173,7 +182,7 @@ struct TranscriptResultView: View {
     // MARK: - Action Buttons
     
     private var actionButtonsView: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             // AI Summary Button
             ActionButton(
                 title: "AI Summary",
@@ -184,6 +193,7 @@ struct TranscriptResultView: View {
                 loadingText: "Analyzing...",
                 action: handleSummaryAction
             )
+            .frame(maxWidth: .infinity) // Expand to fill available space
             
             // Translate Button  
             ActionButton(
@@ -195,7 +205,9 @@ struct TranscriptResultView: View {
                 loadingText: "Translating...",
                 action: handleTranslateAction
             )
+            .frame(maxWidth: .infinity) // Expand to fill available space
         }
+        .frame(maxWidth: .infinity) // Ensure container uses full width
     }
     
     // MARK: - Content Views
@@ -426,10 +438,13 @@ struct TranscriptResultView: View {
     private func handleTranslateAction() {
         generateHapticFeedback(.medium)
         
-        if hasTranslation {
-            navigateToTranslation = true
-        } else {
-            navigateToLanguageSelection = true
+        // Ensure we're on main thread for navigation
+        Task { @MainActor in
+            if hasTranslation {
+                navigateToTranslation = true
+            } else {
+                navigateToLanguageSelection = true
+            }
         }
     }
     
@@ -497,12 +512,15 @@ struct TranscriptResultView: View {
         
         do {
             let translated = try await di.translation.translate(segments: segments, targetLanguage: targetLanguage)
-            translatedTranscript = translated
             
-            generateHapticFeedback(.success)
-            
-            // Open translation view after successful translation
-            navigateToTranslation = true
+            // Update state on main thread
+            await MainActor.run {
+                translatedTranscript = translated
+                generateHapticFeedback(.success)
+                
+                // Navigate to translation view after successful translation
+                navigateToTranslation = true
+            }
         } catch {
             var errorMessage = "Failed to translate"
             if let urlError = error as? URLError, urlError.code == .timedOut {
@@ -737,6 +755,8 @@ struct ActionButton: View {
     let loadingText: String
     let action: () -> Void
     
+    @State private var isPressed = false
+    
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
@@ -778,19 +798,28 @@ struct ActionButton: View {
                 }
             }
             .padding()
+            .frame(maxWidth: .infinity, minHeight: 56) // Full width and proper touch target
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(.tertiarySystemGroupedBackground))
+                    .opacity(isPressed ? 0.7 : 1.0)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(color.opacity(0.2), lineWidth: 1)
+                    .stroke(color.opacity(isPressed ? 0.4 : 0.2), lineWidth: isPressed ? 1.5 : 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 12)) // Make entire area clickable
         }
-        .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isLoading ? 0.98 : 1.0)
+        .buttonStyle(.plain)
+        .scaleEffect(isPressed || isLoading ? 0.98 : 1.0)
+        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isPressed)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isLoading)
         .disabled(isLoading)
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity) { pressing in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isPressed = pressing
+            }
+        } perform: {}
     }
 }
 
