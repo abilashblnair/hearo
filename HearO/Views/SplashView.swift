@@ -8,7 +8,7 @@ struct SplashView: View {
     @State private var showSubtitle = false
     @State private var finalScale: CGFloat = 1.0
     
-    private let characters = Array("HearO")
+    private let characters = Array("AuryO")
     
     var body: some View {
         ZStack {
@@ -151,7 +151,7 @@ struct SplashView: View {
                 }
                 
                 // Animated subtitle
-                Text("Your AI-powered meeting assistant")
+                Text("Record. Transcribe. Remember.")
                     .font(.system(size: 16, weight: .medium, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(

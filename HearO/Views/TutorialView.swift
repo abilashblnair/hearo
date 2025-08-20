@@ -36,7 +36,7 @@ struct TutorialView: View {
                         UserDefaults.standard.set(true, forKey: "didShowTutorial")
                     }
                     .font(.callout.weight(.semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.blue)
                     .padding(.leading, 12)
                 }
                 .padding([.top, .horizontal])

@@ -40,6 +40,32 @@ struct RecordingView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
+                // Custom close button overlay (always visible)
+                VStack {
+                    HStack {
+                        Button(action: { 
+                            if isRecording || di.audio.isSessionActive {
+                                showCancelConfirmation = true 
+                            } else {
+                                dismiss()
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(.ultraThinMaterial))
+                                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                        }
+                        .padding(.leading, 16)
+
+                        Spacer()
+                    }
+                    
+                    Spacer()
+                }
+                .zIndex(1000)
+                
                 Group {
                     if UIDevice.current.userInterfaceIdiom == .pad {
                     // iPad centered layout
@@ -395,41 +421,79 @@ struct RecordingView: View {
 
             }
 
-            // Floating controls when scrolled
+            // Modern floating controls when scrolled
             if showFloatingControls {
                 VStack {
-                    HStack(spacing: 12) {
-                        Button(action: { togglePauseResume() }) {
-                            Image(systemName: isRecording ? "pause.fill" : "play.fill")
-                                .font(.title2)
-                                .contentTransition(.symbolEffect(.replace))
+                    HStack(spacing: 16) {
+                        // Pause/Resume Button
+                        Button(action: { 
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            togglePauseResume() 
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 48, height: 48)
+                                    .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+                                
+                                Circle()
+                                    .stroke(isRecording ? Color.orange.opacity(0.4) : Color.green.opacity(0.4), lineWidth: 1.5)
+                                    .frame(width: 48, height: 48)
+                                
+                                Image(systemName: isRecording ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(isRecording ? .orange : .green)
+                                    .contentTransition(.symbolEffect(.replace.downUp))
+                            }
                         }
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(.ultraThinMaterial))
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(isRecording ? "Recording" : "Paused")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(isRecording ? Color.red : Color.orange)
+                                    .frame(width: 6, height: 6)
+                                    .scaleEffect(isRecording ? 1.2 : 1.0)
+                                    .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isRecording)
+                                
+                                Text(isRecording ? "Recording" : "Paused")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            }
+                            
                             Text(timeString(from: elapsed))
-                                .font(.caption.monospacedDigit())
-                                .fontWeight(.semibold)
+                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.primary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Button(role: .destructive, action: { Task { await stopAndPrompt() } }) {
-                            Image(systemName: "stop.fill")
-                                .font(.title2)
-                                .foregroundColor(.red)
+                        // Stop Button
+                        Button(role: .destructive, action: { 
+                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                            Task { await stopAndPrompt() } 
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 44, height: 44)
+                                    .shadow(color: .red.opacity(0.2), radius: 5, x: 0, y: 2)
+                                
+                                Circle()
+                                    .stroke(Color.red.opacity(0.4), lineWidth: 1)
+                                    .frame(width: 44, height: 44)
+                                
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color.red)
+                                    .frame(width: 12, height: 12)
+                            }
                         }
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(.ultraThinMaterial))
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(25)
-                    .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 28)
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 6)
+                    )
 
                     Spacer()
                 }
@@ -456,34 +520,83 @@ struct RecordingView: View {
         .background(Color(.systemBackground))
         .safeAreaInset(edge: .bottom) {
             if !showFloatingControls {
-                // Bottom controls (when not scrolled)
-                HStack(spacing: 12) {
-                    Button(action: { togglePauseResume() }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: isRecording ? "pause.fill" : "play.fill")
-                            Text(isRecording ? "Pause" : "Resume")
-                        }
-                        .font(.system(size: 18, weight: .semibold))
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 16)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                // Modern bottom controls
+                VStack(spacing: 16) {
+                    // Recording status indicator
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(isRecording ? Color.red : Color.orange)
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(isRecording ? 1.2 : 1.0)
+                            .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isRecording)
+                        
+                        Text(isRecording ? "Recording" : "Paused")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        Text(timeString(from: elapsed))
+                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.primary)
                     }
-
-                    Button(role: .destructive, action: { Task { await stopAndPrompt() } }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "stop.fill")
-                            Text("Stop")
+                    
+                    // Control buttons
+                    HStack(spacing: 32) {
+                        // Pause/Resume Button
+                        Button(action: { 
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            togglePauseResume() 
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 72, height: 72)
+                                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                                
+                                Circle()
+                                    .stroke(isRecording ? Color.orange.opacity(0.3) : Color.green.opacity(0.3), lineWidth: 2)
+                                    .frame(width: 72, height: 72)
+                                
+                                Image(systemName: isRecording ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 24, weight: .semibold))
+                                    .foregroundColor(isRecording ? .orange : .green)
+                                    .contentTransition(.symbolEffect(.replace.downUp))
+                            }
                         }
-                        .font(.system(size: 18, weight: .semibold))
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 16)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
-                        .foregroundColor(.red)
+                        .scaleEffect(isRecording ? 1.05 : 1.0)
+                        .animation(.easeInOut(duration: 0.2), value: isRecording)
+                        
+                        // Stop Button
+                        Button(role: .destructive, action: { 
+                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                            Task { await stopAndPrompt() } 
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 64, height: 64)
+                                    .shadow(color: .red.opacity(0.2), radius: 6, x: 0, y: 3)
+                                
+                                Circle()
+                                    .stroke(Color.red.opacity(0.3), lineWidth: 1.5)
+                                    .frame(width: 64, height: 64)
+                                
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.red)
+                                    .frame(width: 16, height: 16)
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.ultraThinMaterial)
+                        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -2)
+                )
+                .padding(.horizontal, 16)
             }
         }
         .onAppear {
@@ -536,23 +649,7 @@ struct RecordingView: View {
         } message: {
             Text("Do you want to continue recording in the background or stop the recording?")
         }
-        .navigationTitle("Recording")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { 
-                    if isRecording || di.audio.isSessionActive {
-                        showCancelConfirmation = true 
-                    } else {
-                        dismiss()
-                    }
-                }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.primary)
-                }
-            }
-        }
+        .navigationBarHidden(true)
         } // NavigationStack closing brace
 
     private var defaultTitle: String { "Session " + Date.now.formatted(date: .abbreviated, time: .shortened) }
@@ -662,6 +759,14 @@ struct RecordingView: View {
 
     func startRecording() async {
         do {
+            // Randomly show ad (1 in 3 chance) before recording
+        if Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+            di.adManager.presentInterstitial(from: rootVC) { _ in
+                // Continue with recording after ad
+                print("🎬 Recording ad completed - starting recording")
+            }
+        }
+            
             sessionID = UUID()
             let url = try AudioFileStore.url(for: sessionID)
             try await di.audio.requestMicPermission()

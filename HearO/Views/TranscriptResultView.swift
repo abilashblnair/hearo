@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import CoreMedia
+import UIKit
 
 struct TranscriptResultView: View {
     let session: Session
@@ -24,6 +25,10 @@ struct TranscriptResultView: View {
     @State private var isRefreshing = false
     @State private var forceRegenerateSummary = false
     @State private var navigateToLanguageSelection = false
+    
+    // Ad tracking state
+    @State private var summaryGenerationCount = 0
+    @State private var translationAttemptCount = 0
     
     // Audio player state
     @State private var audioPlayer: AVAudioPlayer?
@@ -104,7 +109,7 @@ struct TranscriptResultView: View {
         }
         .navigationDestination(isPresented: $navigateToSummary) {
             if let summary = generatedSummary {
-                SummaryView(summary: summary, sessionDuration: getActualDuration()) { timestamp in
+                SummaryView(summary: summary, sessionDuration: getActualDuration(), sessionTitle: recording?.title ?? session.title) { timestamp in
                     seekToTimestamp(timestamp)
                 }
             } else {
@@ -126,7 +131,18 @@ struct TranscriptResultView: View {
         }
 
         .alert("Error", isPresented: $showingError) {
-            Button("OK") { }
+            Button("OK") { 
+                // Clear error state when dismissed
+                errorMessage = nil
+            }
+            if errorMessage?.contains("cancelled") == true {
+                Button("Retry") {
+                    errorMessage = nil
+                    Task {
+                        await generateSummary()
+                    }
+                }
+            }
         } message: {
             Text(errorMessage ?? "An unknown error occurred")
         }
@@ -417,19 +433,14 @@ struct TranscriptResultView: View {
         }
     }
     
-    @MainActor
-    private func generateSummary() async {
-        guard let segments = session.transcript, !segments.isEmpty else {
-            showError("No transcript available to summarize")
-            return
-        }
-        
+    private func generatingSummaryPostOtherProcess(_ segments: [TranscriptSegment]) async {
         isGeneratingSummary = true
         generateHapticFeedback(.light)
         
         do {
             print("🌐 Generating new summary from API")
             let summary = try await di.summarization.summarize(segments: segments, locale: session.languageCode)
+            
             generatedSummary = summary
             
             // Cache the summary in the Recording if available
@@ -445,7 +456,13 @@ struct TranscriptResultView: View {
             generateHapticFeedback(.success)
             navigateToSummary = true
         } catch {
-            showError("Failed to generate summary: \(error.localizedDescription)")
+            // Check if it's a URL cancellation error
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                print("⚠️ Network request was cancelled")
+                showError("Request was cancelled. Please try again.")
+            } else {
+                showError("Failed to generate summary: \(error.localizedDescription)")
+            }
             generateHapticFeedback(.error)
         }
         
@@ -453,12 +470,28 @@ struct TranscriptResultView: View {
     }
     
     @MainActor
-    private func translateTranscript(to targetLanguage: String) async {
+    private func generateSummary() async {
         guard let segments = session.transcript, !segments.isEmpty else {
-            showError("No transcript available to translate")
+            showError("No transcript available to summarize")
             return
         }
         
+        summaryGenerationCount += 1
+        
+        // Randomly show ad for summary generation (1 in 3 chance after 2nd attempt)
+        if summaryGenerationCount >= 2 && Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+            di.adManager.presentInterstitial(from: rootVC) { _ in
+                Task {
+                    await self.generatingSummaryPostOtherProcess(segments)
+                }
+            }
+        } else {
+            await self.generatingSummaryPostOtherProcess(segments)
+        }
+
+    }
+    
+    private func translateTranscriptPostOtherProcess(_ segments: [TranscriptSegment], _ targetLanguage: String) async {
         isTranslating = true
         generateHapticFeedback(.light)
         
@@ -482,6 +515,28 @@ struct TranscriptResultView: View {
         }
         
         isTranslating = false
+    }
+    
+    @MainActor
+    private func translateTranscript(to targetLanguage: String) async {
+        guard let segments = session.transcript, !segments.isEmpty else {
+            showError("No transcript available to translate")
+            return
+        }
+        
+        translationAttemptCount += 1
+        
+        // Randomly show ad for translation (1 in 3 chance after 2nd attempt)
+        if translationAttemptCount >= 2 && Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+            di.adManager.presentInterstitial(from: rootVC) { _ in
+                Task {
+                    await self.translateTranscriptPostOtherProcess(segments, targetLanguage)
+                }
+            }
+        } else {
+            await self.translateTranscriptPostOtherProcess(segments, targetLanguage)
+        }
+
     }
     
     @MainActor
@@ -577,6 +632,10 @@ struct TranscriptResultView: View {
         isRefreshing = true
         generateHapticFeedback(.light)
         
+        // Clear any previous errors
+        errorMessage = nil
+        showingError = false
+        
         // Clear cached summary to force regeneration
         recording?.clearCachedSummary()
         try? modelContext.save()
@@ -587,15 +646,83 @@ struct TranscriptResultView: View {
         
         print("🔄 Pull-to-refresh: Regenerating summary")
         
-        // Generate new summary
-        await generateSummary()
+        // Create an independent task for summary generation to avoid cancellation
+        // when pull-to-refresh gesture completes
+        Task.detached {
+            await self.generateSummaryDetached()
+        }
         
         isRefreshing = false
+    }
+    
+    private func generateSummaryDetached() async {
+        // Capture needed values since we can't access @State properties from detached task
+        guard let segments = session.transcript, !segments.isEmpty else {
+            await MainActor.run {
+                showError("No transcript available to summarize")
+            }
+            return
+        }
+        
+        let locale = session.languageCode
+        
+        await MainActor.run {
+            isGeneratingSummary = true
+            generateHapticFeedback(.light)
+        }
+        
+        do {
+            print("🌐 Generating new summary from API (detached task)")
+            let summary = try await di.summarization.summarize(segments: segments, locale: locale)
+            
+            await MainActor.run {
+                generatedSummary = summary
+                
+                // Cache the summary in the Recording if available
+                if let recording = recording {
+                    recording.cacheSummary(summary, language: locale)
+                    try? modelContext.save()
+                    print("💾 Cached summary in Recording")
+                }
+                
+                // Reset force regenerate flag
+                forceRegenerateSummary = false
+                
+                generateHapticFeedback(.success)
+                navigateToSummary = true
+                isGeneratingSummary = false
+            }
+        } catch {
+            await MainActor.run {
+                // Check if it's a URL cancellation error
+                if let urlError = error as? URLError, urlError.code == .cancelled {
+                    print("⚠️ Network request was cancelled")
+                    showError("Request was cancelled. Please try again.")
+                } else {
+                    showError("Failed to generate summary: \(error.localizedDescription)")
+                }
+                generateHapticFeedback(.error)
+                isGeneratingSummary = false
+            }
+        }
     }
     
     private func showError(_ message: String) {
         errorMessage = message
         showingError = true
+        
+        // Auto-dismiss error after 5 seconds if it's not a critical error
+        if !message.lowercased().contains("api key") && !message.lowercased().contains("authentication") {
+            Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                if errorMessage == message { // Only dismiss if it's still the same error
+                    DispatchQueue.main.async {
+                        self.showingError = false
+                        self.errorMessage = nil
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -731,6 +858,7 @@ struct TranscriptSegmentRow: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
+    
 }
 
 
@@ -783,3 +911,5 @@ private extension UIImpactFeedbackGenerator.FeedbackStyle {
     TranscriptResultView(session: sampleSession, recording: nil)
         .environmentObject(ServiceContainer.create())
 }
+
+// MARK: - Ad Integration methods moved to AdIntegrationExtension.swift

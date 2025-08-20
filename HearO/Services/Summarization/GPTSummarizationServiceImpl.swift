@@ -30,12 +30,12 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         let chunks = chunkSegments(segments, maxDuration: maxChunkDuration, overlap: chunkOverlap)
         
         if chunks.count == 1 {
-            return try await summarizeChunk(chunks[0], locale: locale)
+            return try await summarizeChunkWithRetry(chunks[0], locale: locale)
         } else {
             let partials: [Summary] = try await withThrowingTaskGroup(of: Summary.self) { group in
                 for chunk in chunks {
                     group.addTask {
-                        try await self.summarizeChunk(chunk, locale: locale)
+                        try await self.summarizeChunkWithRetry(chunk, locale: locale)
                     }
                 }
                 
@@ -88,6 +88,36 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         var summary: Summary = try await requestJSON(system: summarizationSystemPrompt, user: userPrompt)
         summary.locale = locale
         return summary
+    }
+    
+    private func summarizeChunkWithRetry(_ segments: [TranscriptSegment], locale: String) async throws -> Summary {
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("🔄 Summary attempt \(attempt)/\(maxRetries) for chunk with \(segments.count) segments")
+                return try await summarizeChunk(segments, locale: locale)
+            } catch {
+                lastError = error
+                print("❌ Summary attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                // If it's a network cancellation, don't retry
+                if let urlError = error as? URLError, urlError.code == .cancelled {
+                    print("🚫 Network request was cancelled, not retrying")
+                    throw error
+                }
+                
+                // For other errors, retry with backoff
+                if attempt < maxRetries {
+                    let delay = Double(attempt) * 1.0 // 1s, 2s, 3s backoff
+                    print("⏳ Retrying in \(delay) seconds...")
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+        
+        print("💥 All \(maxRetries) summary attempts failed")
+        throw lastError ?? SummarizationError.apiError(408, "Summary generation failed after \(maxRetries) attempts")
     }
     
     private func translateChunk(_ segments: [TranscriptSegment], targetLanguage: String) async throws -> [TranscriptSegment] {
@@ -203,7 +233,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         return mergedSummary
     }
     
-    private func requestJSON<T: Decodable>(system: String, user: String) async throws -> T {
+    private func requestJSON<T: Decodable>(system: String, user: String) async throws -> T {        
         // Validate API key
         guard !apiKey.isEmpty else {
             throw SummarizationError.apiError(401, "OpenAI API key is missing. Please check your configuration.")
@@ -229,6 +259,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(request)
         
+        print("🚀 Sending API request...")
         let (data, response) = try await urlSession.data(for: urlRequest)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -252,9 +283,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         }
         
         do {
-            // Add detailed logging for debugging
-            print("📝 OpenAI Response Content:")
-            print(content)
+            print("✅ API request successful, decoding response...")
             print("🔍 Attempting to decode as \(T.self)")
             
             return try JSONDecoder().decode(T.self, from: jsonData)
@@ -273,7 +302,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             [
                 "start": segment.startTime.formattedHMS(),
                 "end": segment.endTime.formattedHMS(),
-                "speaker": segment.speaker ?? "Unknown",
+                "speaker": segment.speaker ?? "",
                 "text": segment.text
             ]
         }
@@ -313,7 +342,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         
         let segmentArray = segments.map { segment in
             [
-                "speaker": segment.speaker ?? "Unknown",
+                "speaker": segment.speaker ?? "",
                 "text": segment.text
             ]
         }

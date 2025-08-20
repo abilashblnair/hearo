@@ -3,13 +3,20 @@ import SwiftUI
 struct SummaryView: View {
     let summary: Summary
     let sessionDuration: TimeInterval?
+    let sessionTitle: String?
     let onSeekToTimestamp: (TimeInterval) -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var di: ServiceContainer
     @State private var selectedSection: SummarySection = .overview
     @State private var isSharing = false
     @State private var expandedActionItems: Set<UUID> = []
     @State private var animateEntrance = false
     @State private var showingAllQuotes = false
+    @State private var isGeneratingPDF = false
+    @State private var generatedPDFURL: URL?
+    @State private var showingPDFShare = false
+    @State private var pdfError: String?
+    @State private var showingPDFError = false
 
     enum SummarySection: String, CaseIterable {
         case overview = "Overview"
@@ -109,6 +116,35 @@ struct SummaryView: View {
                         }
                     }
                 }
+                
+                // PDF Export Button - Static at bottom
+                VStack(spacing: 16) {
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        Task {
+                            await generatePDF()
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: isGeneratingPDF ? "doc.badge.gearshape" : "doc.fill")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                            
+                            Text(isGeneratingPDF ? "Generating PDF..." : "Export as PDF")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(isGeneratingPDF ? Color.orange : Color.blue)
+                        )
+                    }
+                    .disabled(isGeneratingPDF)
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
             }
         }
         .background(Color(.systemGroupedBackground))
@@ -116,17 +152,15 @@ struct SummaryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    ShareLink(
-                        item: summary.sharingText,
-                        preview: SharePreview("Meeting Summary", image: Image(systemName: "doc.text"))
-                    ) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 16, weight: .medium))
-                    }
-                    .onTapGesture {
-                        generateHapticFeedback(.medium)
-                    }
+                ShareLink(
+                    item: summary.sharingText,
+                    preview: SharePreview("Meeting Summary", image: Image(systemName: "doc.text"))
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .onTapGesture {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
             }
         }
@@ -134,7 +168,19 @@ struct SummaryView: View {
             withAnimation {
                 animateEntrance = true
             }
-            generateHapticFeedback(.light)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+        .sheet(isPresented: $showingPDFShare) {
+            if let pdfURL = generatedPDFURL {
+                ActivityViewController(activityItems: [pdfURL])
+            }
+        }
+        .alert("PDF Export Error", isPresented: $showingPDFError) {
+            Button("OK") {
+                pdfError = nil
+            }
+        } message: {
+            Text(pdfError ?? "Failed to generate PDF")
         }
     }
 
@@ -234,7 +280,7 @@ struct SummaryView: View {
                         section: section,
                         isSelected: selectedSection == section,
                         onTap: {
-                            generateHapticFeedback(.light)
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             selectedSection = section
                         }
                     )
@@ -295,7 +341,7 @@ struct SummaryView: View {
                                             expandedActionItems.insert(item.id)
                                         }
                                     }
-                                    generateHapticFeedback(.light)
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 },
                                 onSeek: onSeekToTimestamp
                             )
@@ -326,7 +372,7 @@ struct SummaryView: View {
                                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                                     showingAllQuotes.toggle()
                                 }
-                                generateHapticFeedback(.light)
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             }
                             .font(.subheadline.weight(.medium))
                             .foregroundColor(.blue)
@@ -363,6 +409,54 @@ struct SummaryView: View {
             return String(format: "%02d:%02d", minutes, seconds)
         }
     }
+    
+    // MARK: - PDF Generation
+    
+    private func generatingPDFPostAllProcess() {
+        do {
+            let pdfTitle = sessionTitle ?? "AI Summary - \(Date().formatted(date: .abbreviated, time: .shortened))"
+            let pdfURL = try di.pdf.buildPDF(from: summary, sessionDuration: sessionDuration, sessionTitle: pdfTitle)
+            
+            generatedPDFURL = pdfURL
+            showingPDFShare = true
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } catch {
+            pdfError = error.localizedDescription
+            showingPDFError = true
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        }
+        
+        isGeneratingPDF = false
+    }
+    
+    @MainActor
+    private func generatePDF() async {
+        isGeneratingPDF = true
+
+        if di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+            di.adManager.presentInterstitial(from: rootVC) { _ in
+                generatingPDFPostAllProcess()
+            }
+        } else {
+            generatingPDFPostAllProcess()
+        }
+
+    }
+    
+    // MARK: - Ad Integration methods moved to AdIntegrationExtension.swift
+}
+
+// MARK: - Activity View Controller for PDF Sharing
+
+struct ActivityViewController: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Supporting Views
@@ -683,7 +777,7 @@ struct TimelineRow: View {
         Button(action: {
             if let timeInterval = entry.at.timeInterval {
                 onSeek(timeInterval)
-                generateHapticFeedback(.light)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
         }) {
             HStack(alignment: .top, spacing: 12) {
@@ -738,7 +832,7 @@ struct TimestampChips: View {
                     Button(action: {
                         if let startTime = ref.startTimeInterval {
                             onSeek(startTime)
-                            generateHapticFeedback(.light)
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         }
                     }) {
                         HStack(spacing: 4) {
@@ -821,7 +915,7 @@ func generateHapticFeedback(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
         ]
     )
 
-    SummaryView(summary: sampleSummary, sessionDuration: 1800) { timestamp in
+    SummaryView(summary: sampleSummary, sessionDuration: 1800, sessionTitle: "Sample Recording") { timestamp in
         print("Seeking to \(timestamp)")
     }
 }

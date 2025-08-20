@@ -7,9 +7,14 @@
 
 import SwiftUI
 import SwiftData
+import GoogleMobileAds
 
 @main
 struct HearOApp: App {
+    init() {
+        MobileAds.shared.start(completionHandler: nil)
+    }
+
     @StateObject private var di = ServiceContainer.create()
     @State private var showSplash = true
     @State private var showTutorial = !UserDefaults.standard.bool(forKey: "didShowTutorial")
