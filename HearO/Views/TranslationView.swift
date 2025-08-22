@@ -3,23 +3,10 @@ import AVFoundation
 
 struct TranslationView: View {
     let originalTranscript: [TranscriptSegment]
-    @State private var translatedTranscript: [TranscriptSegment]
-    @State private var targetLanguage: Language?
-    @State private var isTranslating: Bool = false
+    let translatedTranscript: [TranscriptSegment]
+    let targetLanguage: Language?
     let onSeekToTimestamp: (TimeInterval) -> Void
-    let onLanguageChange: (Language) async -> [TranscriptSegment]?
-
-    init(originalTranscript: [TranscriptSegment],
-         translatedTranscript: [TranscriptSegment],
-         targetLanguage: Language?,
-         onSeekToTimestamp: @escaping (TimeInterval) -> Void,
-         onLanguageChange: @escaping (Language) async -> [TranscriptSegment]?) {
-        self.originalTranscript = originalTranscript
-        self._translatedTranscript = State(initialValue: translatedTranscript)
-        self._targetLanguage = State(initialValue: targetLanguage)
-        self.onSeekToTimestamp = onSeekToTimestamp
-        self.onLanguageChange = onLanguageChange
-    }
+    let onChangeLanguageRequest: () -> Void
 
     @StateObject private var ttsManager = GoogleCloudTTSManager.shared
     @StateObject private var languageManager = LanguageManager()
@@ -27,7 +14,6 @@ struct TranslationView: View {
     @State private var showingOriginal = false
     @State private var currentSpeakingSegment: UUID?
     @State private var isAnyAudioPlaying = false
-    @State private var showLanguageSelection = false
 
     var selectedLanguage: Language? {
         targetLanguage
@@ -117,19 +103,16 @@ struct TranslationView: View {
         .navigationTitle("Translation")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
-        .navigationDestination(isPresented: $showLanguageSelection) {
-            LanguageSelectionView(selectedLanguage: targetLanguage) { language in
-                showLanguageSelection = false
-                Task {
-                    await changeLanguage(to: language)
-                }
-            }
-        }
+
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 12) {
                     // Change Language Button
-                    Button(action: { showLanguageSelection = true }) {
+                    Button(action: {
+                        // Go back to TranscriptResultView and trigger language selection
+                        onChangeLanguageRequest()
+                        dismiss()
+                    }) {
                         HStack(spacing: 4) {
                             Image(systemName: "globe.badge.chevron.backward")
                                 .font(.system(size: 16, weight: .medium))
@@ -142,7 +125,6 @@ struct TranslationView: View {
                         .foregroundColor(.purple)
                         .cornerRadius(8)
                     }
-                    .disabled(isTranslating)
 
                     // Stop Audio Button
                     if isAnyAudioPlaying {
@@ -218,16 +200,8 @@ struct TranslationView: View {
 
                 Spacer()
 
-                // Global Status
-                if isTranslating {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Processing text in small chunks...")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                    }
-                } else if ttsManager.isSpeaking {
+                // Global TTS Status  
+                if ttsManager.isSpeaking {
                     HStack(spacing: 8) {
                         ProgressView()
                             .scaleEffect(0.8)
@@ -317,41 +291,7 @@ struct TranslationView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
-    // MARK: - Language Change
-
-    @MainActor
-    private func changeLanguage(to newLanguage: Language) async {
-        // Stop any playing audio first
-        stopAllAudio()
-
-        // Update UI state
-        isTranslating = true
-        targetLanguage = newLanguage
-
-        // Add haptic feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-        impactFeedback.impactOccurred()
-
-        print("🔄 Changing translation language to: \(newLanguage.name)")
-
-        // Call the language change callback to get new translation
-        if let newTranslation = await onLanguageChange(newLanguage) {
-            translatedTranscript = newTranslation
-
-            // Switch to translation view if currently showing original
-            if showingOriginal {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    showingOriginal = false
-                }
-            }
-
-            print("✅ Successfully changed to \(newLanguage.name) with \(newTranslation.count) segments")
-        } else {
-            print("❌ Failed to get translation for \(newLanguage.name)")
-        }
-
-        isTranslating = false
-    }
+    
 }
 
 // MARK: - Translation Segment Card
@@ -560,7 +500,7 @@ struct StatView: View {
                 isPopular: true
             ),
             onSeekToTimestamp: { _ in },
-            onLanguageChange: { _ in return nil }
+            onChangeLanguageRequest: { }
         )
     }
 }

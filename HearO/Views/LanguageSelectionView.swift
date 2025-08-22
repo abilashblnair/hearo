@@ -277,19 +277,20 @@ struct LanguageSelectionView: View {
 
     private func selectLanguage(_ language: Language) {
         selectedLanguage = language
-
+        
         // Haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
-
+        
         // Animate selection
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             animateSelection = true
         }
-
-        // Delay callback to show selection animation
+        
+        // Show selection animation first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             onLanguageSelected(language)
+            // Parent will handle dismissal with proper delay
         }
     }
 }
@@ -394,13 +395,5 @@ struct RegularLanguageCard: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-    }
-}
-
-// MARK: - Preview
-
-#Preview {
-    LanguageSelectionView { language in
-        print("Selected: \(language.name)")
     }
 }

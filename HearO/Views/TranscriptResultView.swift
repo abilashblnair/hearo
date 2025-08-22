@@ -127,8 +127,10 @@ struct TranscriptResultView: View {
                 onSeekToTimestamp: { timestamp in
                     seekToTimestamp(timestamp)
                 },
-                onLanguageChange: { newLanguage in
-                    return await translateTranscriptForLanguageChange(to: newLanguage.name)
+                onChangeLanguageRequest: {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.handleChangeLanguageRequestFromTranslation()
+                    }
                 }
             )
             .onDisappear {
@@ -178,6 +180,8 @@ struct TranscriptResultView: View {
             }
         }
     }
+    
+
     
     // MARK: - Action Buttons
     
@@ -582,6 +586,22 @@ struct TranscriptResultView: View {
         }
     }
     
+    @MainActor
+    private func handleChangeLanguageRequestFromTranslation() {
+        print("🔄 Change language requested from TranslationView - opening language selection")
+        
+        // Ensure we're back to this view
+        navigateToTranslation = false
+        
+        // Add haptic feedback
+        generateHapticFeedback(.medium)
+        
+        // Open language selection (same as original translate flow)
+        navigateToLanguageSelection = true
+    }
+    
+
+    
     private func seekToTimestamp(_ timestamp: TimeInterval) {
         currentPlayingTimestamp = timestamp
         generateHapticFeedback(.light)
@@ -898,47 +918,3 @@ private extension UIImpactFeedbackGenerator.FeedbackStyle {
     static let success = UIImpactFeedbackGenerator.FeedbackStyle.light
     static let error = UIImpactFeedbackGenerator.FeedbackStyle.heavy
 }
-
-
-// MARK: - Preview
-
-#Preview {
-    let sampleSegments = [
-        TranscriptSegment(
-            id: UUID(),
-            speaker: "John",
-            text: "Welcome everyone to today's meeting. Let's start by reviewing our progress on the current project.",
-            startTime: 0,
-            endTime: 5
-        ),
-        TranscriptSegment(
-            id: UUID(),
-            speaker: "Sarah",
-            text: "Thanks John. I've completed the user interface designs and they're ready for review.",
-            startTime: 5,
-            endTime: 10
-        ),
-        TranscriptSegment(
-            id: UUID(),
-            speaker: "Mike",
-            text: "Great work Sarah. I'll review those designs this afternoon and provide feedback by tomorrow.",
-            startTime: 10,
-            endTime: 15
-        )
-    ]
-    
-    let sampleSession = Session(
-        id: UUID(),
-        title: "Team Meeting - Project Review",
-        createdAt: Date(),
-        audioURL: URL(string: "file://sample.m4a")!,
-        duration: 1800,
-        languageCode: "en-US",
-        transcript: sampleSegments
-    )
-    
-    TranscriptResultView(session: sampleSession, recording: nil)
-        .environmentObject(ServiceContainer.create())
-}
-
-// MARK: - Ad Integration methods moved to AdIntegrationExtension.swift

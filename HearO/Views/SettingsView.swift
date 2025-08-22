@@ -10,7 +10,7 @@ struct SettingsView: View {
     @State private var showAppStore: Bool = false
     @State private var navigationPath = NavigationPath()
 
-    let appStoreURL = URL(string: "https://apps.apple.com/us/app/lingo-south/id6749473687")!
+    let appStoreURL = URL(string: "https://apps.apple.com/in/app/auryo/id6751236806")!
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -82,8 +82,8 @@ struct SettingsView: View {
                 action: sendFeedback
             )
             settingsRow(
-                title: "App Feedback",
-                icon: "star.bubble",
+                title: "App Review",
+                icon: "star",
                 action: openAppStoreFeedback
             )
         }
@@ -257,11 +257,11 @@ enum WebviewType: Hashable {
     var url: String {
         switch self {
         case .aboutUs:
-            return "https://lingosouth-1ed12.web.app"
+            return "https://auryo-e3f8f.web.app"
         case .terms:
-            return "https://lingosouth-1ed12.web.app/terms"
+            return "https://auryo-e3f8f.web.app/terms"
         case .privacy:
-            return "https://lingosouth-1ed12.web.app/privacy"
+            return "https://auryo-e3f8f.web.app/privacy"
         }
     }
 

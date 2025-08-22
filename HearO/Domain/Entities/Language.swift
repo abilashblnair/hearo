@@ -41,10 +41,16 @@ final class LanguageManager: ObservableObject {
     
     private func loadLanguages() {
         isLoading = true
+        print("🔄 Starting to load languages...")
         
-        guard let url = Bundle.main.url(forResource: "supported_languages", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else {
-            print("❌ Failed to load supported_languages.json")
+        guard let url = Bundle.main.url(forResource: "supported_languages", withExtension: "json") else {
+            print("❌ Failed to find supported_languages.json in bundle")
+            isLoading = false
+            return
+        }
+        
+        guard let data = try? Data(contentsOf: url) else {
+            print("❌ Failed to read data from supported_languages.json")
             isLoading = false
             return
         }
@@ -55,9 +61,12 @@ final class LanguageManager: ObservableObject {
                 self.languages = response.languages
                 self.isLoading = false
                 print("✅ Loaded \(self.languages.count) languages")
+                print("📂 Categories: \(self.categories)")
+                print("🗂️ Grouped languages: \(self.groupedLanguages.keys.sorted())")
             }
         } catch {
             print("❌ Failed to decode languages: \(error)")
+            print("📄 Data preview: \(String(data: data.prefix(200), encoding: .utf8) ?? "Unable to preview")")
             isLoading = false
         }
     }

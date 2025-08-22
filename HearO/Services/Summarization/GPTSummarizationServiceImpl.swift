@@ -58,11 +58,22 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         
         print("🌍 Starting translation to \(targetLanguage) for \(segments.count) segments")
         
+        // Debug: Print first few segments to understand input
+        for (index, segment) in segments.prefix(3).enumerated() {
+            print("📝 Input segment \(index + 1): '\(segment.text.prefix(50))...' (\(segment.text.count) chars)")
+        }
+        
         // Use character-based chunking for translation to ensure manageable request sizes
         let chunks = chunkSegmentsForTranslation(segments)
         var translatedSegments: [TranscriptSegment] = []
         
         print("📦 Created \(chunks.count) character-based chunks for translation")
+        
+        // Debug chunking
+        for (index, chunk) in chunks.enumerated() {
+            let totalChars = chunk.reduce(0) { $0 + $1.text.count }
+            print("📦 Chunk \(index + 1): \(chunk.count) segments, \(totalChars) total characters")
+        }
         
         for (index, chunk) in chunks.enumerated() {
             print("🔄 Translating chunk \(index + 1)/\(chunks.count) with \(chunk.count) segments")
@@ -137,6 +148,27 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             system: translationSystemPrompt,
             user: userPrompt
         )
+        
+        print("📥 Received translation response with \(response.segments.count) segments for \(segments.count) input segments")
+        
+        // Ensure we have the same number of segments in response as input
+        guard response.segments.count == segments.count else {
+            print("⚠️ Segment count mismatch: input=\(segments.count), response=\(response.segments.count)")
+            // Fallback: use minimum count to avoid crashes
+            let minCount = min(segments.count, response.segments.count)
+            let responseSegments = Array(response.segments.prefix(minCount))
+            let inputSegments = Array(segments.prefix(minCount))
+            
+            return zip(inputSegments, responseSegments).map { original, translated in
+                TranscriptSegment(
+                    id: original.id,
+                    speaker: translated.speaker ?? original.speaker,
+                    text: translated.translatedText,
+                    startTime: original.startTime,
+                    endTime: original.endTime
+                )
+            }
+        }
         
         return zip(segments, response.segments).map { original, translated in
             TranscriptSegment(
@@ -353,21 +385,26 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         )!
         
         return """
-        Translate to \(targetLanguage). Maintain speaker attribution.
+        Translate each segment to \(targetLanguage). You must return EXACTLY the same number of segments as provided.
+        Maintain speaker attribution and preserve original text structure.
         
-        Output JSON:
+        CRITICAL: Return exactly \(segments.count) segments in the response array.
+        
+        Output JSON format (must match this structure exactly):
         {
           "segments": [
             {
-              "originalText": "...",
-              "translatedText": "...",
-              "speaker": "..."
+              "originalText": "exact original text from input",
+              "translatedText": "translated version",
+              "speaker": "exact speaker name from input or null"
             }
           ]
         }
         
-        TRANSCRIPT:
+        INPUT TRANSCRIPT (\(segments.count) segments):
         \(jsonString)
+        
+        Remember: Return exactly \(segments.count) segments in your response.
         """
     }
     

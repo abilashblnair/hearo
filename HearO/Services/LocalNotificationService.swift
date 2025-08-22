@@ -408,3 +408,4 @@ extension Notification.Name {
     static let pausePlaybackFromNotification = Notification.Name("pausePlaybackFromNotification")
     static let stopPlaybackFromNotification = Notification.Name("stopPlaybackFromNotification")
 }
+
