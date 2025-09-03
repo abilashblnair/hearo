@@ -14,6 +14,10 @@ struct TranslationView: View {
     @State private var showingOriginal = false
     @State private var currentSpeakingSegment: UUID?
     @State private var isAnyAudioPlaying = false
+    
+    // Toast state for copy functionality
+    @State private var showToast = false
+    @State private var toastMessage = ""
 
     var selectedLanguage: Language? {
         targetLanguage
@@ -49,6 +53,7 @@ struct TranslationView: View {
                                             ttsManager: ttsManager,
                                             onSeek: { onSeekToTimestamp(segment.startTime) },
                                             onSpeak: { speakSegment(segment) },
+                                            onCopyText: copyTextToClipboard,
                                                                         onUpdateSpeakingState: { segmentId in
                                 DispatchQueue.main.async {
                                     currentSpeakingSegment = segmentId
@@ -85,6 +90,7 @@ struct TranslationView: View {
                                     ttsManager: ttsManager,
                                     onSeek: { onSeekToTimestamp(segment.startTime) },
                                     onSpeak: { speakSegment(segment) },
+                                    onCopyText: copyTextToClipboard,
                                                                 onUpdateSpeakingState: { segmentId in
                                 DispatchQueue.main.async {
                                     currentSpeakingSegment = segmentId
@@ -100,6 +106,30 @@ struct TranslationView: View {
             }
         }
         .background(Color(.systemGroupedBackground))
+        .overlay(
+            // Toast overlay
+            VStack {
+                Spacer()
+                if showToast {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.white)
+                        Text(toastMessage)
+                            .foregroundColor(.white)
+                            .font(.callout.weight(.medium))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.8))
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.spring(response: 0.5, dampingFraction: 0.8), value: showToast)
+                }
+            }
+            .padding(.bottom, 50)
+        )
         .navigationTitle("Translation")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
@@ -242,6 +272,30 @@ struct TranslationView: View {
         .background(Color(.secondarySystemGroupedBackground))
     }
 
+    // MARK: - Copy Functionality
+    
+    private func copyTextToClipboard(_ text: String) {
+        UIPasteboard.general.string = text
+        toastMessage = "Text copied"
+        
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+        
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        
+        // Auto-hide toast after 2 seconds
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            await MainActor.run {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    showToast = false
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func toggleLanguage() {
@@ -305,6 +359,7 @@ struct TranslationSegmentCard: View {
     let ttsManager: GoogleCloudTTSManager
     let onSeek: () -> Void
     let onSpeak: () -> Void
+    let onCopyText: (String) -> Void
     let onUpdateSpeakingState: (UUID?) -> Void
 
     @State private var isSpeakingThis = false
@@ -364,6 +419,9 @@ struct TranslationSegmentCard: View {
                 .foregroundColor(.primary)
                 .multilineTextAlignment(.leading)
                 .lineLimit(nil)
+                .onLongPressGesture {
+                    onCopyText(segment.text)
+                }
         }
         .padding()
         .background(

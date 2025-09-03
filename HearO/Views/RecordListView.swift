@@ -29,6 +29,8 @@ struct RecordListView: View {
     @State private var isPlaying: Bool = false
     @State private var playerDelegate = AudioPlayerDelegate()
     @State private var playbackTime: TimeInterval = 0
+    @State private var isSeeking = false
+    @State private var seekTime: TimeInterval = 0
     private let playbackTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
     // Mini recorder state
@@ -49,6 +51,10 @@ struct RecordListView: View {
     // Multi-selection and management state
     @State private var isMultiSelectMode: Bool = false
     @State private var selectedRecordings: Set<UUID> = []
+    @State private var expandedRecordings: Set<UUID> = []
+    
+    // Interruption handling state
+    @State private var showMiniResumePrompt = false
     @State private var showingRenameDialog: Bool = false
     @State private var renamingRecording: Recording? = nil
     @State private var newRecordingName: String = ""
@@ -103,6 +109,7 @@ struct RecordListView: View {
                     isPlaying = false
                     playingID = nil
                     playbackTime = 0
+                    isSeeking = false
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
 
@@ -115,7 +122,7 @@ struct RecordListView: View {
                 Task { await loadRecordings() }
             }
             .onReceive(playbackTimer) { _ in
-                if isPlaying, let player, playingID != nil { playbackTime = player.currentTime }
+                if isPlaying, let player, playingID != nil, !isSeeking { playbackTime = player.currentTime }
                 if di.audio.isSessionActive {
                     if di.audio.isRecording { di.audio.updateMeters() }
                     recElapsed = di.audio.currentTime
@@ -148,6 +155,19 @@ struct RecordListView: View {
             } message: {
                 Text("Enter a new name for your recording")
             }
+            .alert("Resume Recording?", isPresented: $showMiniResumePrompt) {
+                Button("Resume Recording") {
+                    manualResumeMiniRecording()
+                }
+                Button("Stop Recording", role: .destructive) {
+                    stopMiniAndPrompt()
+                }
+                Button("Not Now", role: .cancel) { 
+                    showMiniResumePrompt = false
+                }
+            } message: {
+                Text("Your call has ended. Would you like to resume recording or stop and save the current session?")
+            }
             .sheet(isPresented: $showingShareSheet) {
                 if #available(iOS 16.0, *) {
                     ShareSheet(items: shareItems)
@@ -173,7 +193,6 @@ struct RecordListView: View {
                     ForEach(recordings) { rec in
                         recordingRow(for: rec)
                             .listRowSeparator(.visible)
-                            .contentShape(Rectangle())
                             .onLongPressGesture {
                                 enterMultiSelectMode()
                                 selectedRecordings.insert(rec.id)
@@ -242,6 +261,27 @@ struct RecordListView: View {
                     Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    
+                    // Show notes preview if available and cell is not expanded
+                    if let notes = rec.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !expandedRecordings.contains(rec.id) {
+                        Text(notes.prefix(60) + (notes.count > 60 ? "..." : ""))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 2)
+                            .lineLimit(2)
+                    }
+                }
+                .onTapGesture {
+                    if !isMultiSelectMode {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if expandedRecordings.contains(rec.id) {
+                                expandedRecordings.remove(rec.id)
+                            } else {
+                                expandedRecordings.insert(rec.id)
+                            }
+                        }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
                 }
                 
                 Spacer()
@@ -305,25 +345,98 @@ struct RecordListView: View {
             // Playback controls
             if playingID == rec.id && !isMultiSelectMode {
                 HStack(spacing: 8) {
-                    Text(format(duration: playbackTime))
+                    Text(format(duration: isSeeking ? seekTime : playbackTime))
                         .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                    Slider(value: Binding(
-                        get: { min(playbackTime, totalDuration) },
-                        set: { newVal in
-                            let clamped = max(0, min(newVal, totalDuration))
-                            playbackTime = clamped
-                            if let player = player { player.currentTime = clamped }
+                        .foregroundColor(isSeeking ? .blue : .secondary)
+                    
+                    // Interactive seek slider with custom gesture handling
+                    GeometryReader { geometry in
+                        ZStack {
+                            // Background track
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color(.systemGray4))
+                                .frame(height: 4)
+                            
+                            // Progress track
+                            HStack {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.blue)
+                                    .frame(height: 4)
+                                    .frame(width: max(0, CGFloat(totalDuration > 0 ? (isSeeking ? seekTime : playbackTime) / totalDuration : 0) * geometry.size.width))
+                                Spacer(minLength: 0)
+                            }
+                            
+                            // Slider thumb
+                            HStack {
+                                Spacer()
+                                    .frame(width: max(0, CGFloat(totalDuration > 0 ? (isSeeking ? seekTime : playbackTime) / totalDuration : 0) * geometry.size.width - 8))
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 16, height: 16)
+                                    .scaleEffect(isSeeking ? 1.2 : 1.0)
+                                    .animation(.easeInOut(duration: 0.1), value: isSeeking)
+                                Spacer()
+                            }
                         }
-                    ), in: 0...max(0.1, totalDuration))
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    print("🎯 Custom drag gesture changed: \(value.location.x) / \(geometry.size.width)")
+                                    if !isSeeking {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
+                                    isSeeking = true
+                                    let progress = max(0, min(1, value.location.x / geometry.size.width))
+                                    seekTime = progress * totalDuration
+                                }
+                                .onEnded { value in
+                                    print("🎯 Custom drag gesture ended")
+                                    let progress = max(0, min(1, value.location.x / geometry.size.width))
+                                    seekTime = progress * totalDuration
+                                    seekToTime(seekTime)
+                                    isSeeking = false
+                                }
+                        )
+                    }
+                                            .frame(height: 44) // Larger touch target
+                    
                     Text(format(duration: totalDuration))
                         .font(.caption.monospacedDigit())
                         .foregroundColor(.secondary)
                 }
             }
+            
+            // Expanded notes section
+            if expandedRecordings.contains(rec.id), let notes = rec.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "note.text")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Notes")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    
+                    Text(notes.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .slide))
+            }
         }
         .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
         .animation(.easeInOut(duration: 0.2), value: isSelected)
+        .animation(.easeInOut(duration: 0.2), value: expandedRecordings.contains(rec.id))
     }
     
     // MARK: - Multi-Select Toolbar
@@ -428,6 +541,7 @@ struct RecordListView: View {
             if let player = player, isPlaying {
                 player.pause()
                 isPlaying = false
+                isSeeking = false
                 setPlaybackSessionActive(false)
             }
 
@@ -520,6 +634,7 @@ struct RecordListView: View {
             player?.stop()
             isPlaying = false
             playingID = nil
+            isSeeking = false
             setPlaybackSessionActive(false)
         }
         
@@ -551,6 +666,7 @@ struct RecordListView: View {
             player?.stop()
             isPlaying = false
             playingID = nil
+            isSeeking = false
             setPlaybackSessionActive(false)
         }
         
@@ -591,12 +707,12 @@ struct RecordListView: View {
                 // Left tappable area re-opens full RecordingView
                 Button(action: { showRecordingSheet = true }) {
                     HStack(spacing: 12) {
-                        Circle().fill(di.audio.isRecording ? Color.red : Color.orange)
+                        Circle().fill(getStatusColor())
                             .frame(width: 10, height: 10)
                             .opacity(di.audio.isRecording ? 1 : 0.6)
                             .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: di.audio.isRecording)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(di.audio.isRecording ? "Recording…" : "Paused")
+                            Text(getStatusText())
                                 .font(.footnote).foregroundColor(.secondary)
                             Text(format(duration: recElapsed))
                                 .font(.headline.monospacedDigit())
@@ -640,6 +756,14 @@ struct RecordListView: View {
 
     // MARK: - Actions
     private func toggleMiniPauseResume() {
+        // Check if there are pending resume operations (interruption state)
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl,
+           unifiedService.hasPendingResumeOperations {
+            // Show resume prompt for interrupted recording
+            showMiniResumePrompt = true
+            return
+        }
+        
         do {
             if di.audio.isRecording {
                 // Pause only
@@ -654,6 +778,34 @@ struct RecordListView: View {
                 showRecordingSheet = true
             }
         } catch { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+    }
+    
+    private func manualResumeMiniRecording() {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            unifiedService.forceResumeAfterInterruption()
+            
+            // Give a small delay for the audio service to process the resume
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.syncMiniRecorderState()
+            }
+            
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+    }
+    
+    private func syncMiniRecorderState() {
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else { return }
+        
+        print("🔄 Syncing mini recorder state after manual resume")
+        print("📊 Mini recorder state: Recording=\(unifiedService.isRecording), Transcription=\(unifiedService.isTranscriptionActive)")
+        
+        // Update elapsed time to trigger UI refresh
+        recElapsed = unifiedService.currentTime
+        
+        // Update prompt state to ensure it's closed after resume
+        showMiniResumePrompt = false
+        
+        print("✅ Mini recorder state synced")
     }
 
     private func stopMiniAndPrompt() {
@@ -671,9 +823,9 @@ struct RecordListView: View {
         let filename = url.deletingPathExtension().lastPathComponent
         let id = UUID(uuidString: filename) ?? UUID()
         let title = miniNameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? ("Session " + Date.now.formatted(date: .abbreviated, time: .shortened)) : miniNameText
-        // Store relative path so sandbox container UUID changes don't break playback
+        // Store relative path so sandbox container UUID changes don't break playbook
         let relativePath = "audio/\(id.uuidString).m4a"
-        let rec = Recording(id: id, title: title, createdAt: Date(), audioURL: relativePath, duration: miniLastDuration)
+        let rec = Recording(id: id, title: title, createdAt: Date(), audioURL: relativePath, duration: miniLastDuration, notes: nil)
         do {
             try RecordingDataStore(context: modelContext).saveRecording(rec)
             NotificationCenter.default.post(name: .didSaveRecording, object: nil)
@@ -693,6 +845,21 @@ struct RecordListView: View {
         }
     }
 
+    private func seekToTime(_ time: TimeInterval) {
+        guard let player = player else { 
+            print("❌ RecordListView seekToTime: No audio player available")
+            return 
+        }
+        
+        let clampedTime = max(0, min(time, player.duration))
+        print("🎯 RecordListView seeking to time: \(clampedTime) (requested: \(time), duration: \(player.duration))")
+        
+        player.currentTime = clampedTime
+        playbackTime = clampedTime
+        
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
     private func togglePlayback(for rec: Recording) {
         if playingID == rec.id, let player = player {
             if isPlaying {
@@ -713,6 +880,7 @@ struct RecordListView: View {
             isPlaying = false
             playingID = nil
             playbackTime = 0
+            isSeeking = false
 
             // Setup new player asynchronously to avoid blocking UI
             Task { @MainActor in
@@ -740,6 +908,7 @@ struct RecordListView: View {
                         isPlaying = false
                         playingID = nil
                         playbackTime = 0
+                        isSeeking = false
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 } catch {
@@ -749,6 +918,7 @@ struct RecordListView: View {
                     isPlaying = false
                     playingID = nil
                     player = nil
+                    isSeeking = false
                 }
             }
         }
@@ -757,7 +927,7 @@ struct RecordListView: View {
     private func delete(at offsets: IndexSet) {
         // Stop playback and deactivate session if deleting current item
         if let currentID = playingID, let idx = offsets.first, recordings.indices.contains(idx), recordings[idx].id == currentID {
-            player?.stop(); isPlaying = false; playingID = nil; setPlaybackSessionActive(false)
+            player?.stop(); isPlaying = false; playingID = nil; isSeeking = false; setPlaybackSessionActive(false)
         }
         var toDelete: [Recording] = []
         for index in offsets { if recordings.indices.contains(index) { toDelete.append(recordings[index]) } }
@@ -799,6 +969,28 @@ struct RecordListView: View {
                 print("Playback session error: \(error)")
             }
         }
+    }
+    
+    // MARK: - Interruption Status Helpers
+    
+    private func getStatusColor() -> Color {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            // Check if there are pending operations (interruption state)
+            if unifiedService.hasPendingResumeOperations {
+                return Color.yellow // Interrupted state
+            }
+        }
+        return di.audio.isRecording ? Color.red : Color.orange
+    }
+    
+    private func getStatusText() -> String {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            // Check if there are pending operations (interruption state)
+            if unifiedService.hasPendingResumeOperations {
+                return "Call in progress"
+            }
+        }
+        return di.audio.isRecording ? "Recording…" : "Paused"
     }
 }
 

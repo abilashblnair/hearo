@@ -17,6 +17,7 @@ struct SummaryView: View {
     @State private var showingPDFShare = false
     @State private var pdfError: String?
     @State private var showingPDFError = false
+    @State private var showingCopySuccess = false
 
     enum SummarySection: String, CaseIterable {
         case overview = "Overview"
@@ -57,30 +58,112 @@ struct SummaryView: View {
                     HStack {
                         Spacer()
                         
-                        ScrollViewReader { proxy in
-                            ScrollView(.vertical, showsIndicators: false) {
-                                LazyVStack(spacing: 20) {
-                                    headerView
-                                        .opacity(animateEntrance ? 1 : 0)
-                                        .offset(y: animateEntrance ? 0 : -20)
-                                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateEntrance)
+                        VStack {
+                            ScrollViewReader { proxy in
+                                ScrollView(.vertical, showsIndicators: false) {
+                                    LazyVStack(spacing: 20) {
+                                        headerView
+                                            .opacity(animateEntrance ? 1 : 0)
+                                            .offset(y: animateEntrance ? 0 : -20)
+                                            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateEntrance)
 
-                                    sectionPicker
-                                        .opacity(animateEntrance ? 1 : 0)
-                                        .offset(y: animateEntrance ? 0 : -10)
-                                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateEntrance)
+                                        sectionPicker
+                                            .opacity(animateEntrance ? 1 : 0)
+                                            .offset(y: animateEntrance ? 0 : -10)
+                                            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateEntrance)
 
-                                    contentView
-                                        .opacity(animateEntrance ? 1 : 0)
-                                        .offset(y: animateEntrance ? 0 : 10)
-                                        .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.3), value: animateEntrance)
+                                        contentView
+                                            .opacity(animateEntrance ? 1 : 0)
+                                            .offset(y: animateEntrance ? 0 : 10)
+                                            .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.3), value: animateEntrance)
+                                    }
+                                    .padding(UIDevice.current.userInterfaceIdiom == .pad ? 32 : 16)
                                 }
-                                .padding(UIDevice.current.userInterfaceIdiom == .pad ? 32 : 16)
+                                .onChange(of: selectedSection) { _, newSection in
+                                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                        proxy.scrollTo(newSection.rawValue, anchor: .top)
+                                    }
+                                }
                             }
-                            .onChange(of: selectedSection) { _, newSection in
-                                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                                    proxy.scrollTo(newSection.rawValue, anchor: .top)
+                            
+                            // Action Buttons for iPad
+                            VStack(spacing: 16) {
+                                // Copy Success Toast
+                                if showingCopySuccess {
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Summary copied to clipboard!")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.primary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .fill(Color(.systemBackground))
+                                            .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                                    )
+                                    .transition(.scale.combined(with: .opacity))
                                 }
+                                
+                                // Action Buttons
+                                HStack(spacing: 16) {
+                                    // Copy Summary Button
+                                    Button(action: {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        Task {
+                                            await copySummaryToClipboard()
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "doc.on.doc.fill")
+                                                .font(.system(size: 18, weight: .medium))
+                                                .foregroundColor(.white)
+                                            
+                                            Text("Copy Summary")
+                                                .font(.system(size: 18, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .multilineTextAlignment(.center)
+                                        }
+                                        .frame(maxWidth: .infinity, minHeight: 56)
+                                        .padding(.vertical, 16)
+                                        .padding(.horizontal, 24)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .fill(Color.green)
+                                        )
+                                    }
+                                    
+                                    // Export PDF Button
+                                    Button(action: {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        Task {
+                                            await generatePDF()
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: isGeneratingPDF ? "doc.badge.gearshape" : "doc.fill")
+                                                .font(.system(size: 18, weight: .medium))
+                                                .foregroundColor(.white)
+                                            
+                                            Text(isGeneratingPDF ? "Generating..." : "Export PDF")
+                                                .font(.system(size: 18, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .multilineTextAlignment(.center)
+                                        }
+                                        .frame(maxWidth: .infinity, minHeight: 56)
+                                        .padding(.vertical, 16)
+                                        .padding(.horizontal, 24)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .fill(isGeneratingPDF ? Color.orange : Color.blue)
+                                        )
+                                    }
+                                    .disabled(isGeneratingPDF)
+                                }
+                                .frame(maxWidth: 600) // Limit button width on iPad
+                                .padding(.bottom, 32)
                             }
                         }
                         .frame(maxWidth: min(geometry.size.width * 0.8, 1000))
@@ -117,31 +200,80 @@ struct SummaryView: View {
                     }
                 }
                 
-                // PDF Export Button - Static at bottom
+                // Action Buttons - Static at bottom
                 VStack(spacing: 16) {
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        Task {
-                            await generatePDF()
-                        }
-                    }) {
+                    // Copy Success Toast
+                    if showingCopySuccess {
                         HStack {
-                            Image(systemName: isGeneratingPDF ? "doc.badge.gearshape" : "doc.fill")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.white)
-                            
-                            Text(isGeneratingPDF ? "Generating PDF..." : "Export as PDF")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Summary copied to clipboard!")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(isGeneratingPDF ? Color.orange : Color.blue)
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(Color(.systemBackground))
+                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
                         )
+                        .transition(.scale.combined(with: .opacity))
                     }
-                    .disabled(isGeneratingPDF)
+                    
+                    // Action Buttons
+                    HStack(spacing: 12) {
+                        // Copy Summary Button
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            Task {
+                                await copySummaryToClipboard()
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "doc.on.doc.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                
+                                Text("Copy Summary")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.green)
+                            )
+                        }
+                        
+                        // Export PDF Button
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            Task {
+                                await generatePDF()
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: isGeneratingPDF ? "doc.badge.gearshape" : "doc.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                
+                                Text(isGeneratingPDF ? "Generating..." : "Export PDF")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(isGeneratingPDF ? Color.orange : Color.blue)
+                            )
+                        }
+                        .disabled(isGeneratingPDF)
+                    }
                     .padding(.horizontal)
                     .padding(.bottom, 20)
                 }
@@ -441,6 +573,135 @@ struct SummaryView: View {
             generatingPDFPostAllProcess()
         }
 
+    }
+    
+    // MARK: - Copy Summary
+    
+    private func generateSummaryText() -> String {
+        var text = ""
+        
+        // Title
+        let title = sessionTitle ?? "Meeting Summary"
+        text += "\(title)\n\n"
+        
+        // Metadata
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .full
+        dateFormatter.timeStyle = .short
+        
+        text += "Generated: \(dateFormatter.string(from: summary.generatedAt))\n"
+        
+        if let duration = sessionDuration, duration > 0 {
+            text += "Duration: \(formatDuration(duration))\n"
+        }
+        text += "\n"
+        
+        // Overview
+        if !summary.overview.isEmpty {
+            text += "📋 Overview\n"
+            text += "\(summary.overview)\n\n"
+        }
+        
+        // Key Points
+        if !summary.keyPoints.isEmpty {
+            text += "🔑 Key Points\n"
+            for point in summary.keyPoints {
+                text += "• \(point.text)\n"
+            }
+            text += "\n"
+        }
+        
+        // Action Items
+        if !summary.actionItems.isEmpty {
+            text += "✅ Action Items\n"
+            for item in summary.actionItems {
+                text += "• \(item.text)"
+                
+                var details: [String] = []
+                if let owner = item.owner {
+                    details.append("@\(owner)")
+                }
+                if let dueDate = item.dueDateFormatted {
+                    details.append("Due: \(dueDate)")
+                }
+                if let priority = item.priority {
+                    details.append("Priority: \(priority.rawValue.capitalized)")
+                }
+                
+                if !details.isEmpty {
+                    text += " (\(details.joined(separator: ", ")))"
+                }
+                
+                text += "\n"
+            }
+            text += "\n"
+        }
+        
+        // Decisions
+        if !summary.decisions.isEmpty {
+            text += "🎯 Decisions\n"
+            for decision in summary.decisions {
+                text += "• \(decision.text)"
+                if let impact = decision.impact {
+                    text += " (Impact: \(impact.rawValue.capitalized))"
+                }
+                text += "\n"
+            }
+            text += "\n"
+        }
+        
+        // Notable Quotes
+        if !summary.quotes.isEmpty {
+            text += "💬 Notable Quotes\n"
+            for quote in summary.quotes {
+                text += "\"\(quote.text)\""
+                if let speaker = quote.speaker {
+                    text += " — \(speaker)"
+                }
+                if let context = quote.context {
+                    text += " (\(context))"
+                }
+                text += "\n\n"
+            }
+        }
+        
+        // Timeline
+        if !summary.timeline.isEmpty {
+            text += "⏱️ Timeline\n"
+            for entry in summary.timeline {
+                text += "• \(entry.text)"
+                if let importance = entry.importance {
+                    text += " (\(importance.rawValue.capitalized) importance)"
+                }
+                text += "\n"
+            }
+        }
+        
+        return text
+    }
+    
+    private func copySummaryPostAllProcess() {
+        let summaryText = generateSummaryText()
+        UIPasteboard.general.string = summaryText
+        
+        showingCopySuccess = true
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        
+        // Hide the success message after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showingCopySuccess = false
+        }
+    }
+    
+    @MainActor
+    private func copySummaryToClipboard() async {
+        if di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+            di.adManager.presentInterstitial(from: rootVC) { _ in
+                copySummaryPostAllProcess()
+            }
+        } else {
+            copySummaryPostAllProcess()
+        }
     }
     
     // MARK: - Ad Integration methods moved to AdIntegrationExtension.swift

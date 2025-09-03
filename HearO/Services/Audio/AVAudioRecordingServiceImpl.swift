@@ -128,12 +128,38 @@ final class AVAudioRecordingServiceImpl: NSObject, AudioRecordingService, AVAudi
         }
     }
     
+    // MARK: - Interruption Recovery (Not implemented in legacy service)
+    
+    /// Manual resume not supported in legacy service - use UnifiedAudioRecordingServiceImpl for full functionality
+    func manualResumeAfterInterruption() {
+        print("⚠️ Manual resume after interruption not supported in AVAudioRecordingServiceImpl")
+        print("💡 Use UnifiedAudioRecordingServiceImpl for advanced interruption handling")
+    }
+    
+    /// Pending resume operations not tracked in legacy service
+    var hasPendingResumeOperations: Bool {
+        return false // Legacy service doesn't track pending operations
+    }
+    
+    // MARK: - AVAudioRecorderDelegate
+    
     // Optional: handle interruptions
     func audioRecorderBeginInterruption(_ recorder: AVAudioRecorder) {
+        print("🔴 AVAudioRecorder interruption began")
         stopMetering()
         isRecording = false
     }
+    
     func audioRecorderEndInterruption(_ recorder: AVAudioRecorder, withOptions flags: Int) {
-        // Optionally resume
+        print("🟢 AVAudioRecorder interruption ended with options: \(flags)")
+        // Basic resume logic for AVAudioRecorder
+        if flags == 1 { // AVAudioSessionInterruptionOptions.shouldResume
+            do {
+                try resumeRecording()
+                print("✅ Recording resumed after interruption")
+            } catch {
+                print("❌ Failed to resume recording after interruption: \(error)")
+            }
+        }
     }
 }

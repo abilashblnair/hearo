@@ -30,11 +30,17 @@ struct TranscriptResultView: View {
     @State private var summaryGenerationCount = 0
     @State private var translationAttemptCount = 0
     
+    // Toast state for copy functionality
+    @State private var showToast = false
+    @State private var toastMessage = ""
+    
     // Audio player state
     @State private var audioPlayer: AVAudioPlayer?
     @State private var isPlaying: Bool = false
     @State private var playbackTime: TimeInterval = 0
     @State private var audioPlayerDelegate = AudioPlayerDelegate()
+    @State private var isSeeking = false
+    @State private var seekTime: TimeInterval = 0
     private let playbackTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     @StateObject private var languageManager = LanguageManager()
@@ -83,6 +89,30 @@ struct TranscriptResultView: View {
             }
         }
         .background(Color(.systemGroupedBackground))
+        .overlay(
+            // Toast overlay
+            VStack {
+                Spacer()
+                if showToast {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.white)
+                        Text(toastMessage)
+                            .foregroundColor(.white)
+                            .font(.callout.weight(.medium))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.8))
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.spring(response: 0.5, dampingFraction: 0.8), value: showToast)
+                }
+            }
+            .padding(.bottom, 50)
+        )
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $navigateToLanguageSelection) {
@@ -167,7 +197,7 @@ struct TranscriptResultView: View {
             stopAudio()
         }
         .onReceive(playbackTimer) { _ in
-            if let player = audioPlayer, isPlaying {
+            if let player = audioPlayer, isPlaying, !isSeeking {
                 playbackTime = player.currentTime
                 
                 // Update current playing timestamp for UI highlighting
@@ -223,11 +253,17 @@ struct TranscriptResultView: View {
                 // Session stats header
                 sessionStatsView
                 
+                // Notes section (if available)
+                if let recording = recording, let notes = recording.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    notesView(notes: notes.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                
                 if let transcript = session.transcript, !transcript.isEmpty {
                     TranscriptSegmentsList(
                         segments: transcript,
                         currentPlayingTimestamp: currentPlayingTimestamp,
-                        onSeekToTimestamp: seekToTimestamp
+                        onSeekToTimestamp: seekToTimestamp,
+                        onCopyText: copyTextToClipboard
                     )
                 } else {
                     emptyTranscriptView
@@ -238,6 +274,56 @@ struct TranscriptResultView: View {
         .refreshable {
             await handleRefresh()
         }
+    }
+    
+    private func notesView(notes: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "note.text")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.accentColor)
+                
+                Text("Notes")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Button(action: {
+                    copyTextToClipboard(notes)
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+            }
+            
+            Text(notes)
+                .font(.body)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(.secondarySystemGroupedBackground))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color(.separator), lineWidth: 0.5)
+                )
+        }
+        .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 0 : 0)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(.separator), lineWidth: 0.5)
+        )
+        .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 0 : 0)
     }
     
     private var sessionStatsView: some View {
@@ -313,13 +399,47 @@ struct TranscriptResultView: View {
                         .font(.caption.weight(.medium))
                         .foregroundColor(.primary)
                     Spacer()
-                    Text(formatDuration(clampedPlaybackTime))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Text(formatDuration(isSeeking ? seekTime : clampedPlaybackTime))
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(isSeeking ? .blue : .secondary)
+                        Text("/")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(formatDuration(actualDurationForProgress))
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
-                ProgressView(value: clampedPlaybackTime, total: actualDurationForProgress)
-                    .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+                // Interactive seek slider
+                Slider(
+                    value: Binding(
+                        get: { 
+                            let currentValue = isSeeking ? seekTime : clampedPlaybackTime
+                            return currentValue
+                        },
+                        set: { newValue in
+                            print("🎯 TranscriptView Slider value changed: \(newValue)")
+                            isSeeking = true
+                            seekTime = newValue
+                        }
+                    ),
+                    in: 0...actualDurationForProgress,
+                    onEditingChanged: { isEditing in
+                        print("🎯 TranscriptView Slider editing changed: \(isEditing)")
+                        if isEditing {
+                            // User started seeking
+                            isSeeking = true
+                        } else {
+                            // User finished seeking
+                            seekToTime(seekTime)
+                            isSeeking = false
+                        }
+                    }
+                )
+                .accentColor(.blue)
+                .allowsHitTesting(true)
             }
         }
         .padding(.horizontal, 16)
@@ -401,6 +521,28 @@ struct TranscriptResultView: View {
         .padding(.top, 100)
     }
     
+    // MARK: - Copy Functionality
+    
+    private func copyTextToClipboard(_ text: String) {
+        UIPasteboard.general.string = text
+        toastMessage = "Text copied"
+        generateHapticFeedback(.medium)
+        
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        
+        // Auto-hide toast after 2 seconds
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            await MainActor.run {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    showToast = false
+                }
+            }
+        }
+    }
+    
     // MARK: - Helper Properties
     
     private var transcriptText: String {
@@ -458,7 +600,7 @@ struct TranscriptResultView: View {
         
         do {
             print("🌐 Generating new summary from API")
-            let summary = try await di.summarization.summarize(segments: segments, locale: session.languageCode)
+            let summary = try await di.summarization.summarize(segments: segments, locale: session.languageCode, title: session.title, notes: recording?.notes)
             
             generatedSummary = summary
             
@@ -618,6 +760,22 @@ struct TranscriptResultView: View {
         }
     }
     
+    private func seekToTime(_ time: TimeInterval) {
+        guard let player = audioPlayer else { 
+            print("❌ seekToTime: No audio player available")
+            return 
+        }
+        
+        let clampedTime = max(0, min(time, player.duration))
+        print("🎯 Seeking to time: \(clampedTime) (requested: \(time), duration: \(player.duration))")
+        
+        player.currentTime = clampedTime
+        playbackTime = clampedTime
+        currentPlayingTimestamp = clampedTime
+        
+        generateHapticFeedback(.light)
+    }
+    
     private func setupAudioPlayer() {
         guard audioPlayer == nil else { return }
         
@@ -658,6 +816,7 @@ struct TranscriptResultView: View {
         audioPlayer?.stop()
         isPlaying = false
         currentPlayingTimestamp = nil
+        isSeeking = false
         
         // Deactivate audio session
         try? AVAudioSession.sharedInstance().setActive(false)
@@ -711,7 +870,7 @@ struct TranscriptResultView: View {
         
         do {
             print("🌐 Generating new summary from API (detached task)")
-            let summary = try await di.summarization.summarize(segments: segments, locale: locale)
+            let summary = try await di.summarization.summarize(segments: segments, locale: locale, title: session.title, notes: recording?.notes)
             
             await MainActor.run {
                 generatedSummary = summary
@@ -847,6 +1006,7 @@ struct TranscriptSegmentsList: View {
     let segments: [TranscriptSegment]
     let currentPlayingTimestamp: TimeInterval?
     let onSeekToTimestamp: (TimeInterval) -> Void
+    let onCopyText: (String) -> Void
     
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 16) {
@@ -854,7 +1014,8 @@ struct TranscriptSegmentsList: View {
                 TranscriptSegmentRow(
                     segment: segment,
                     isCurrentlyPlaying: isSegmentCurrentlyPlaying(segment),
-                    onSeekToTimestamp: onSeekToTimestamp
+                    onSeekToTimestamp: onSeekToTimestamp,
+                    onCopyText: onCopyText
                 )
             }
         }
@@ -870,6 +1031,7 @@ struct TranscriptSegmentRow: View {
     let segment: TranscriptSegment
     let isCurrentlyPlaying: Bool
     let onSeekToTimestamp: (TimeInterval) -> Void
+    let onCopyText: (String) -> Void
     
     var body: some View {
         Button(action: {
@@ -894,6 +1056,9 @@ struct TranscriptSegmentRow: View {
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .onLongPressGesture {
+                        onCopyText(segment.text)
+                    }
             }
             .padding()
             .background(

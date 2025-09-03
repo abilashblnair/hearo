@@ -62,13 +62,15 @@ class LocalNotificationService: NSObject, ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
         recordingStartTime = nil
-        
+    }
+
+    func showRecordingSuccessNotification() {
         Task {
             await removeNotification(identifier: NotificationID.recording)
             await showRecordingCompletedNotification()
         }
     }
-    
+
     private func showRecordingNotification(title: String, elapsed: TimeInterval) async {
         let content = UNMutableNotificationContent()
         content.title = "🎙️ AuryO Recording"
@@ -408,4 +410,5 @@ extension Notification.Name {
     static let pausePlaybackFromNotification = Notification.Name("pausePlaybackFromNotification")
     static let stopPlaybackFromNotification = Notification.Name("stopPlaybackFromNotification")
 }
+
 

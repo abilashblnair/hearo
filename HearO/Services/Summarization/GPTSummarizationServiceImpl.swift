@@ -22,7 +22,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
     }
     
     // MARK: - SummarizationService
-    func summarize(segments: [TranscriptSegment], locale: String = "en-US") async throws -> Summary {
+    func summarize(segments: [TranscriptSegment], locale: String = "en-US", title: String? = nil, notes: String? = nil) async throws -> Summary {
         guard !segments.isEmpty else {
             return Summary(locale: locale)
         }
@@ -30,12 +30,12 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         let chunks = chunkSegments(segments, maxDuration: maxChunkDuration, overlap: chunkOverlap)
         
         if chunks.count == 1 {
-            return try await summarizeChunkWithRetry(chunks[0], locale: locale)
+            return try await summarizeChunkWithRetry(chunks[0], locale: locale, title: title, notes: notes)
         } else {
             let partials: [Summary] = try await withThrowingTaskGroup(of: Summary.self) { group in
                 for chunk in chunks {
                     group.addTask {
-                        try await self.summarizeChunkWithRetry(chunk, locale: locale)
+                        try await self.summarizeChunkWithRetry(chunk, locale: locale, title: title, notes: notes)
                     }
                 }
                 
@@ -46,7 +46,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
                 return results
             }
             
-            var finalSummary = try await mergePartialSummaries(partials, locale: locale)
+            var finalSummary = try await mergePartialSummaries(partials, locale: locale, title: title, notes: notes)
             finalSummary.locale = locale
             return finalSummary
         }
@@ -94,20 +94,20 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
     }
     
     // MARK: - Private Implementation
-    private func summarizeChunk(_ segments: [TranscriptSegment], locale: String) async throws -> Summary {
-        let userPrompt = buildSummarizationPrompt(segments: segments, locale: locale)
+    private func summarizeChunk(_ segments: [TranscriptSegment], locale: String, title: String? = nil, notes: String? = nil) async throws -> Summary {
+        let userPrompt = buildSummarizationPrompt(segments: segments, locale: locale, title: title, notes: notes)
         var summary: Summary = try await requestJSON(system: summarizationSystemPrompt, user: userPrompt)
         summary.locale = locale
         return summary
     }
     
-    private func summarizeChunkWithRetry(_ segments: [TranscriptSegment], locale: String) async throws -> Summary {
+    private func summarizeChunkWithRetry(_ segments: [TranscriptSegment], locale: String, title: String? = nil, notes: String? = nil) async throws -> Summary {
         var lastError: Error?
         
         for attempt in 1...maxRetries {
             do {
                 print("🔄 Summary attempt \(attempt)/\(maxRetries) for chunk with \(segments.count) segments")
-                return try await summarizeChunk(segments, locale: locale)
+                return try await summarizeChunk(segments, locale: locale, title: title, notes: notes)
             } catch {
                 lastError = error
                 print("❌ Summary attempt \(attempt) failed: \(error.localizedDescription)")
@@ -244,18 +244,29 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         return translatedSegments
     }
     
-    private func mergePartialSummaries(_ partials: [Summary], locale: String) async throws -> Summary {
+    private func mergePartialSummaries(_ partials: [Summary], locale: String, title: String? = nil, notes: String? = nil) async throws -> Summary {
         guard partials.count > 1 else {
             var defaultSummary = partials.first ?? Summary()
             defaultSummary.locale = locale
             return defaultSummary
         }
         
-        let mergePrompt = """
+        var mergePrompt = """
         Merge multiple JSON summaries into one comprehensive summary.
         Deduplicate similar items and keep timestamp refs.
         Return a single Summary JSON object.
         
+        """
+        
+        if let title = title {
+            mergePrompt += "SESSION TITLE: \(title)\n\n"
+        }
+        
+        if let notes = notes {
+            mergePrompt += "USER NOTES: \(notes)\n\n"
+        }
+        
+        mergePrompt += """
         PARTIAL SUMMARIES:
         \(String(data: try JSONEncoder().encode(partials), encoding: .utf8) ?? "")
         """
@@ -329,7 +340,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         }
     }
     
-    private func buildSummarizationPrompt(segments: [TranscriptSegment], locale: String) -> String {
+    private func buildSummarizationPrompt(segments: [TranscriptSegment], locale: String, title: String? = nil, notes: String? = nil) -> String {
         let segmentArray = segments.map { segment in
             [
                 "start": segment.startTime.formattedHMS(),
@@ -344,11 +355,26 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             encoding: .utf8
         )!
         
-        return """
+        var prompt = """
         MEETING CONTEXT
         - Locale: \(locale)
         - Goal: Accurate summary with timestamped references
         
+        """
+        
+        if let title = title {
+            prompt += "SESSION TITLE: \(title)\n"
+        }
+        
+        if let notes = notes {
+            prompt += """
+            USER NOTES (for context): \(notes)
+            Use this context to provide more accurate summaries and identify what was important to the user.
+            
+            """
+        }
+        
+        prompt += """
         OUTPUT SCHEMA:
         \(summarySchemaJSON)
         
@@ -363,8 +389,15 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         5) Create timeline if applicable
         6) Write 2-3 sentence overview
         
-        Return valid JSON only.
         """
+        
+        if let notes = notes {
+            prompt += "7) Consider the user notes when prioritizing important content\n"
+        }
+        
+        prompt += "\nReturn valid JSON only."
+        
+        return prompt
     }
     
     private func buildTranslationPrompt(segments: [TranscriptSegment], targetLanguage: String) -> String {

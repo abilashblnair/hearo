@@ -1,7 +1,6 @@
 import Foundation
 import PDFKit
 import UIKit
-import CoreText
 
 final class PDFKitServiceImpl: PDFService {
     func buildPDF(for session: Session) throws -> URL {
@@ -15,25 +14,17 @@ final class PDFKitServiceImpl: PDFService {
     }
     
     func buildPDF(from summary: Summary, sessionDuration: TimeInterval?, sessionTitle: String?) throws -> URL {
-        let pdfDoc = PDFDocument()
-        
-        // Create the PDF content using NSAttributedString
-        let content = buildPDFContent(from: summary, sessionDuration: sessionDuration, sessionTitle: sessionTitle)
-        
-        // Create PDF data from attributed string
+        // Create PDF data
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter size
         let pdfData = NSMutableData()
         
         UIGraphicsBeginPDFContextToData(pdfData, pageRect, nil)
         
-        let textRect = pageRect.insetBy(dx: 50, dy: 50) // Add margins
-        var currentY: CGFloat = textRect.minY
+        let margin: CGFloat = 50
+        let textRect = pageRect.insetBy(dx: margin, dy: margin)
         
-        // Draw content with pagination
-        let maxHeight = textRect.height - 50 // Leave space for page numbers
-        let pageContext = UIGraphicsGetCurrentContext()!
-        
-        drawPDFContent(content, in: textRect, context: pageContext, startY: &currentY, maxHeight: maxHeight, pageRect: pageRect)
+        // Draw content using simple text rendering approach
+        drawPDFContentSimple(summary: summary, sessionDuration: sessionDuration, sessionTitle: sessionTitle, textRect: textRect, pageRect: pageRect)
         
         UIGraphicsEndPDFContext()
         
@@ -47,51 +38,80 @@ final class PDFKitServiceImpl: PDFService {
         return url
     }
     
-    private func buildPDFContent(from summary: Summary, sessionDuration: TimeInterval?, sessionTitle: String?) -> NSAttributedString {
-        let content = NSMutableAttributedString()
+    private func drawPDFContentSimple(summary: Summary, sessionDuration: TimeInterval?, sessionTitle: String?, textRect: CGRect, pageRect: CGRect) {
+        var currentY: CGFloat = textRect.minY
+        let lineHeight: CGFloat = 20
+        let sectionSpacing: CGFloat = 30
+        let itemSpacing: CGFloat = 15
+        let pageBottomMargin: CGFloat = 80
+        var pageNumber = 1
+        
+        // Helper function to check if we need a new page
+        func checkNewPage() {
+            if currentY + lineHeight > pageRect.height - pageBottomMargin {
+                drawPageNumber(pageNumber, in: pageRect)
+                pageNumber += 1
+                UIGraphicsBeginPDFPage()
+                currentY = textRect.minY
+            }
+        }
+        
+        // Helper function to draw text with style
+        func drawText(_ text: String, font: UIFont, color: UIColor = .black) {
+            checkNewPage()
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color
+            ]
+            let attributedText = NSAttributedString(string: text, attributes: attributes)
+            let textSize = attributedText.boundingRect(with: CGSize(width: textRect.width, height: CGFloat.greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil)
+            
+            attributedText.draw(in: CGRect(x: textRect.minX, y: currentY, width: textRect.width, height: textSize.height))
+            currentY += textSize.height + itemSpacing
+        }
+        
+        // Start first page
+        UIGraphicsBeginPDFPage()
         
         // Title
         let title = sessionTitle ?? "Meeting Summary"
-        content.append(styledText(title, style: .title))
-        content.append(NSAttributedString(string: "\n\n"))
+        drawText(title, font: .boldSystemFont(ofSize: 24))
+        currentY += 10
         
         // Metadata
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .full
         dateFormatter.timeStyle = .short
         
-        content.append(styledText("Generated: \(dateFormatter.string(from: summary.generatedAt))", style: .metadata))
+        drawText("Generated: \(dateFormatter.string(from: summary.generatedAt))", font: .systemFont(ofSize: 10), color: .gray)
         
         if let duration = sessionDuration, duration > 0 {
-            content.append(styledText("\nDuration: \(formatDuration(duration))", style: .metadata))
+            drawText("Duration: \(formatDuration(duration))", font: .systemFont(ofSize: 10), color: .gray)
         }
-        content.append(NSAttributedString(string: "\n\n"))
+        
+        currentY += sectionSpacing
         
         // Overview
         if !summary.overview.isEmpty {
-            content.append(styledText("📋 Overview", style: .heading))
-            content.append(NSAttributedString(string: "\n"))
-            content.append(styledText(summary.overview, style: .body))
-            content.append(NSAttributedString(string: "\n\n"))
+            drawText("📋 Overview", font: .boldSystemFont(ofSize: 18))
+            drawText(summary.overview, font: .systemFont(ofSize: 12))
+            currentY += sectionSpacing
         }
         
         // Key Points
         if !summary.keyPoints.isEmpty {
-            content.append(styledText("🔑 Key Points", style: .heading))
-            content.append(NSAttributedString(string: "\n"))
+            drawText("🔑 Key Points", font: .boldSystemFont(ofSize: 18))
             for point in summary.keyPoints {
-                content.append(styledText("• \(point.text)", style: .body))
-                content.append(NSAttributedString(string: "\n"))
+                drawText("• \(point.text)", font: .systemFont(ofSize: 12))
             }
-            content.append(NSAttributedString(string: "\n"))
+            currentY += sectionSpacing
         }
         
         // Action Items
         if !summary.actionItems.isEmpty {
-            content.append(styledText("✅ Action Items", style: .heading))
-            content.append(NSAttributedString(string: "\n"))
+            drawText("✅ Action Items", font: .boldSystemFont(ofSize: 18))
             for item in summary.actionItems {
-                content.append(styledText("• \(item.text)", style: .body))
+                var itemText = "• \(item.text)"
                 
                 var details: [String] = []
                 if let owner = item.owner {
@@ -105,143 +125,70 @@ final class PDFKitServiceImpl: PDFService {
                 }
                 
                 if !details.isEmpty {
-                    content.append(styledText(" (\(details.joined(separator: ", ")))", style: .metadata))
+                    itemText += " (\(details.joined(separator: ", ")))"
                 }
                 
-                content.append(NSAttributedString(string: "\n"))
+                drawText(itemText, font: .systemFont(ofSize: 12))
             }
-            content.append(NSAttributedString(string: "\n"))
+            currentY += sectionSpacing
         }
         
         // Decisions
         if !summary.decisions.isEmpty {
-            content.append(styledText("🎯 Decisions", style: .heading))
-            content.append(NSAttributedString(string: "\n"))
+            drawText("🎯 Decisions", font: .boldSystemFont(ofSize: 18))
             for decision in summary.decisions {
-                content.append(styledText("• \(decision.text)", style: .body))
+                var decisionText = "• \(decision.text)"
                 if let impact = decision.impact {
-                    content.append(styledText(" (Impact: \(impact.rawValue.capitalized))", style: .metadata))
+                    decisionText += " (Impact: \(impact.rawValue.capitalized))"
                 }
-                content.append(NSAttributedString(string: "\n"))
+                drawText(decisionText, font: .systemFont(ofSize: 12))
             }
-            content.append(NSAttributedString(string: "\n"))
+            currentY += sectionSpacing
         }
         
         // Notable Quotes
         if !summary.quotes.isEmpty {
-            content.append(styledText("💬 Notable Quotes", style: .heading))
-            content.append(NSAttributedString(string: "\n"))
+            drawText("💬 Notable Quotes", font: .boldSystemFont(ofSize: 18))
             for quote in summary.quotes {
-                content.append(styledText("\"\(quote.text)\"", style: .quote))
+                var quoteText = "\"\(quote.text)\""
                 if let speaker = quote.speaker {
-                    content.append(styledText(" — \(speaker)", style: .metadata))
+                    quoteText += " — \(speaker)"
                 }
                 if let context = quote.context {
-                    content.append(styledText(" (\(context))", style: .metadata))
+                    quoteText += " (\(context))"
                 }
-                content.append(NSAttributedString(string: "\n\n"))
+                drawText(quoteText, font: .italicSystemFont(ofSize: 12), color: .darkGray)
             }
+            currentY += sectionSpacing
         }
         
         // Timeline
         if !summary.timeline.isEmpty {
-            content.append(styledText("⏱️ Timeline", style: .heading))
-            content.append(NSAttributedString(string: "\n"))
+            drawText("⏱️ Timeline", font: .boldSystemFont(ofSize: 18))
             for entry in summary.timeline {
-                content.append(styledText("• \(entry.text)", style: .body))
+                var timelineText = "• \(entry.text)"
                 if let importance = entry.importance {
-                    content.append(styledText(" (\(importance.rawValue.capitalized) importance)", style: .metadata))
+                    timelineText += " (\(importance.rawValue.capitalized) importance)"
                 }
-                content.append(NSAttributedString(string: "\n"))
+                drawText(timelineText, font: .systemFont(ofSize: 12))
             }
         }
         
-        return content
+        // Draw final page number
+        drawPageNumber(pageNumber, in: pageRect)
     }
     
-    private enum TextStyle {
-        case title, heading, body, metadata, quote
-    }
-    
-    private func styledText(_ text: String, style: TextStyle) -> NSAttributedString {
-        let attributes: [NSAttributedString.Key: Any]
-        
-        switch style {
-        case .title:
-            attributes = [
-                .font: UIFont.boldSystemFont(ofSize: 24),
-                .foregroundColor: UIColor.black
-            ]
-        case .heading:
-            attributes = [
-                .font: UIFont.boldSystemFont(ofSize: 18),
-                .foregroundColor: UIColor.black
-            ]
-        case .body:
-            attributes = [
-                .font: UIFont.systemFont(ofSize: 12),
-                .foregroundColor: UIColor.black
-            ]
-        case .metadata:
-            attributes = [
-                .font: UIFont.systemFont(ofSize: 10),
-                .foregroundColor: UIColor.gray
-            ]
-        case .quote:
-            attributes = [
-                .font: UIFont.italicSystemFont(ofSize: 12),
-                .foregroundColor: UIColor.darkGray
-            ]
-        }
-        
-        return NSAttributedString(string: text, attributes: attributes)
-    }
-    
-    private func drawPDFContent(_ content: NSAttributedString, in rect: CGRect, context: CGContext, startY: inout CGFloat, maxHeight: CGFloat, pageRect: CGRect) {
-        let framesetter = CTFramesetterCreateWithAttributedString(content)
-        var currentRange = CFRange(location: 0, length: content.length)
-        var pageNumber = 1
-        
-        while currentRange.location < content.length {
-            UIGraphicsBeginPDFPage()
-            
-            let frameRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: maxHeight)
-            let path = CGPath(rect: frameRect, transform: nil)
-            
-            let frame = CTFramesetterCreateFrame(framesetter, currentRange, path, nil)
-            
-            // Flip coordinate system for PDF
-            context.saveGState()
-            context.scaleBy(x: 1, y: -1)
-            context.translateBy(x: 0, y: -rect.maxY)
-            
-            CTFrameDraw(frame, context)
-            
-            context.restoreGState()
-            
-            // Draw page number
-            let pageNumberText = "Page \(pageNumber)"
-            let pageAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 10),
-                .foregroundColor: UIColor.gray
-            ]
-            let pageAttrString = NSAttributedString(string: pageNumberText, attributes: pageAttributes)
-            let pageSize = pageAttrString.boundingRect(with: CGSize(width: 200, height: 20), options: [], context: nil)
-            let pageY = rect.maxY - 30
-            pageAttrString.draw(at: CGPoint(x: rect.midX - pageSize.width/2, y: pageY))
-            
-            // Get the range that was actually drawn
-            let visibleRange = CTFrameGetVisibleStringRange(frame)
-            currentRange.location += visibleRange.length
-            currentRange.length = content.length - currentRange.location
-            
-            // Break if no more content to draw
-            if visibleRange.length == 0 || currentRange.length <= 0 {
-                break
-            }
-            
-            pageNumber += 1
-        }
+    private func drawPageNumber(_ pageNumber: Int, in pageRect: CGRect) {
+        let pageNumberText = "Page \(pageNumber)"
+        let pageAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 10),
+            .foregroundColor: UIColor.gray
+        ]
+        let pageAttrString = NSAttributedString(string: pageNumberText, attributes: pageAttributes)
+        let pageSize = pageAttrString.boundingRect(with: CGSize(width: 200, height: 20), options: [], context: nil)
+        let pageNumberY = pageRect.height - 30
+        let pageNumberX = (pageRect.width - pageSize.width) / 2
+        pageAttrString.draw(at: CGPoint(x: pageNumberX, y: pageNumberY))
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -261,3 +208,4 @@ final class PDFKitServiceImpl: PDFService {
         }
     }
 }
+

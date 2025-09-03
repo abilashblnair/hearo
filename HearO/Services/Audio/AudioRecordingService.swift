@@ -18,4 +18,7 @@ protocol AudioRecordingService {
     func deactivateSessionIfNeeded()
     // Transcription support
     var onTranscriptUpdate: ((String, Bool) -> Void)? { get set }
+    // Interruption recovery
+    func manualResumeAfterInterruption()
+    var hasPendingResumeOperations: Bool { get }
 }

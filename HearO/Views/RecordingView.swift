@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import Speech
 
 struct RecordingView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,8 +16,7 @@ struct RecordingView: View {
     @State private var power: Float = -160
     @State private var lastDuration: TimeInterval = 0
 
-    @State private var showNamePrompt = false
-    @State private var nameText: String = ""
+    @State private var showSavePopup = false
     @State private var isSaving = false
     
     // Cancel confirmation alert
@@ -32,6 +32,13 @@ struct RecordingView: View {
     // Scroll state for floating controls
     @State private var scrollOffset: CGFloat = 0
     @State private var showFloatingControls = false
+    
+    // Interruption handling state
+    @State private var isInterrupted = false
+    @State private var showResumePrompt = false
+    @State private var interruptionType: String = ""
+    @State private var resumeAttempts = 0
+    @State private var maxResumeAttempts = 3
 
     // Faster metering for smoother waveform
     private let meterTimer = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()
@@ -179,17 +186,20 @@ struct RecordingView: View {
                                                                 .id("partial")
                                                         }
 
-                                                        if transcriptLines.isEmpty && currentPartialText.isEmpty && transcriptPermissionGranted {
-                                                            VStack(spacing: 8) {
-                                                                Image(systemName: liveTranscriptActive ? "mic.circle.fill" : "mic.circle")
-                                                                    .font(.system(size: 40))
-                                                                    .foregroundColor(liveTranscriptActive ? .green : .secondary)
-                                                                Text(liveTranscriptActive ? "Listening for speech..." : (isRecording ? "Transcription starting..." : "Ready to transcribe"))
-                                                                    .font(.body)
-                                                                    .foregroundColor(.secondary)
-                                                            }
-                                                            .padding(.top, 40)
-                                                        }
+                                                                                                        if transcriptLines.isEmpty && currentPartialText.isEmpty && transcriptPermissionGranted {
+                                                    VStack(spacing: 8) {
+                                                        Image(systemName: liveTranscriptActive ? "mic.circle.fill" : "mic.circle")
+                                                            .font(.system(size: 40))
+                                                            .foregroundColor(liveTranscriptActive ? .green : .secondary)
+                                                        Text(liveTranscriptActive ? "Listening for speech..." : (isRecording ? "Transcription starting..." : "Ready to transcribe"))
+                                                            .font(.body)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .padding(.top, 40)
+                                                    .onAppear {
+                                                        print("📝 DEBUG: Showing 'listening' state - lines:\(transcriptLines.count), partial:'\(currentPartialText)', permission:\(transcriptPermissionGranted), liveActive:\(liveTranscriptActive)")
+                                                    }
+                                                }
 
                                                         if !transcriptPermissionGranted {
                                                             VStack(spacing: 12) {
@@ -364,6 +374,9 @@ struct RecordingView: View {
                                                             .foregroundColor(.secondary)
                                                     }
                                                     .padding(.top, 40)
+                                                    .onAppear {
+                                                        print("📝 DEBUG: Showing 'listening' state - lines:\(transcriptLines.count), partial:'\(currentPartialText)', permission:\(transcriptPermissionGranted), liveActive:\(liveTranscriptActive)")
+                                                    }
                                                 }
 
                                                 if !transcriptPermissionGranted {
@@ -450,12 +463,12 @@ struct RecordingView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
                                 Circle()
-                                    .fill(isRecording ? Color.red : Color.orange)
+                                    .fill(isInterrupted ? Color.yellow : (isRecording ? Color.red : Color.orange))
                                     .frame(width: 6, height: 6)
                                     .scaleEffect(isRecording ? 1.2 : 1.0)
                                     .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isRecording)
                                 
-                                Text(isRecording ? "Recording" : "Paused")
+                                Text(isInterrupted ? "Call in progress" : (isRecording ? "Recording" : "Paused"))
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.secondary)
                             }
@@ -525,12 +538,12 @@ struct RecordingView: View {
                     // Recording status indicator
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(isRecording ? Color.red : Color.orange)
+                            .fill(isInterrupted ? Color.yellow : (isRecording ? Color.red : Color.orange))
                             .frame(width: 8, height: 8)
                             .scaleEffect(isRecording ? 1.2 : 1.0)
                             .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isRecording)
                         
-                        Text(isRecording ? "Recording" : "Paused")
+                        Text(isInterrupted ? "Call in progress" : (isRecording ? "Recording" : "Paused"))
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
                         
@@ -600,6 +613,18 @@ struct RecordingView: View {
             }
         }
         .onAppear {
+            // Check actual system permissions to restore transcriptPermissionGranted properly
+            Task {
+                let speechAuthStatus = SFSpeechRecognizer.authorizationStatus()
+                let isPermissionGranted = speechAuthStatus == .authorized
+                
+                if isPermissionGranted && !transcriptPermissionGranted {
+                    await MainActor.run {
+                        transcriptPermissionGranted = true
+                    }
+                }
+            }
+            
             // Set up audio service callbacks
             setupAudioCallbacks()
             
@@ -610,8 +635,11 @@ struct RecordingView: View {
                 // Request notification permissions
                 _ = await di.notifications.requestPermissions()
                 
-                // First request permissions for transcription
-                await requestTranscriptPermissions()
+                // First request permissions for transcription if not already granted
+                if !transcriptPermissionGranted {
+                    await requestTranscriptPermissions()
+                }
+                
                 // Then start or attach to recording session
                 await attachOrStart()
             }
@@ -631,16 +659,26 @@ struct RecordingView: View {
             di.audio.updateMeters()
             power = di.audio.currentPower
         }
-        .sensoryFeedback(.success, trigger: showNamePrompt)
+        .sensoryFeedback(.success, trigger: showSavePopup)
         .alert("Error", isPresented: .constant(error != nil), actions: {
             Button("OK", role: .cancel) { error = nil }
         }, message: {
             Text(error ?? "")
         })
-        .alert("Name your recording", isPresented: $showNamePrompt) {
-            TextField("Enter a title", text: $nameText)
-            Button("Save") { saveNamedRecording() }
-            Button("Cancel", role: .cancel) { showNamePrompt = false }
+        .overlay {
+            if showSavePopup {
+                SaveRecordingPopupView(
+                    duration: lastDuration,
+                    onSave: { title, notes in
+                        saveNamedRecording(title: title, notes: notes)
+                    },
+                    onCancel: {
+                        showSavePopup = false
+                    }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .center)))
+                .zIndex(1000)
+            }
         }
         .alert("Stop Recording?", isPresented: $showCancelConfirmation) {
             Button("Continue in Background") {
@@ -649,11 +687,24 @@ struct RecordingView: View {
             }
             Button("Stop Recording", role: .destructive) {
                 // Stop recording and dismiss
-                Task { await forceStopRecording() }
+                Task { await stopAndPrompt() }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Do you want to continue recording in the background or stop the recording?")
+        }
+        .alert("Resume Recording?", isPresented: $showResumePrompt) {
+            Button("Resume Recording") {
+                manualResumeRecording()
+            }
+            Button("Stop Recording", role: .destructive) {
+                Task { await stopAndPrompt() }
+            }
+            Button("Not Now", role: .cancel) { 
+                showResumePrompt = false
+            }
+        } message: {
+            Text("Your \(interruptionType) has ended. Would you like to resume recording or stop and save the current session?")
         }
         .navigationBarHidden(true)
         } // NavigationStack closing brace
@@ -679,20 +730,12 @@ struct RecordingView: View {
     private func setupAudioCallbacks() {
         // Set up transcript update callback if available
         if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
-            unifiedService.onTranscriptUpdate = { text, isFinal in
-                DispatchQueue.main.async {
-                    if isFinal {
-                        // Add to completed lines and clear partial
-                        if !text.isEmpty {
-                            transcriptLines.append(text)
-                        }
-                        currentPartialText = ""
-                    } else {
-                        // Update partial text
-                        currentPartialText = text
-                    }
-                }
+            // ✅ Ensure transcript permission is granted for proper UI display
+            if transcriptEnabled {
+                transcriptPermissionGranted = true
             }
+            
+            setupTranscriptCallback(unifiedService)
             
             // Set up error handling
             unifiedService.onError = { error in
@@ -700,6 +743,45 @@ struct RecordingView: View {
                     self.error = "Audio error: \(error.localizedDescription)"
                 }
             }
+            
+            // Set up interruption handling callbacks
+            unifiedService.onInterruptionBegan = {
+                DispatchQueue.main.async {
+                    self.handleInterruptionBegan()
+                }
+            }
+            
+            unifiedService.onRecordingPaused = {
+                DispatchQueue.main.async {
+                    self.handleRecordingPaused()
+                }
+            }
+            
+            unifiedService.onRecordingResumed = {
+                DispatchQueue.main.async {
+                    self.handleRecordingResumed()
+                }
+            }
+            
+            unifiedService.onAutoResumeAttemptFailed = { attempts, error in
+                DispatchQueue.main.async {
+                    self.handleAutoResumeAttemptFailed(attempts: attempts, error: error)
+                }
+            }
+            
+            // Set up transcript cache restoration callback
+            unifiedService.onTranscriptCacheRestored = { cachedLines, cachedPartial in
+                DispatchQueue.main.async {
+                    self.restoreTranscriptCache(lines: cachedLines, partial: cachedPartial)
+                }
+            }
+            
+            // Configure interruption handling for optimal user experience
+            unifiedService.configureInterruptionHandling(
+                pauseOnInterruption: true,
+                autoResumeAfterInterruption: true,
+                maxAutoResumeAttempts: maxResumeAttempts
+            )
         }
     }
 
@@ -741,6 +823,32 @@ struct RecordingView: View {
     }
 
 
+    
+    private func setupTranscriptCallback(_ unifiedService: UnifiedAudioRecordingServiceImpl) {
+        
+        unifiedService.onTranscriptUpdate = { text, isFinal in
+            DispatchQueue.main.async {
+                if isFinal {
+                    // Final result - add completed segment to transcript lines
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.transcriptLines.append(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    self.currentPartialText = ""
+                } else {
+                    // Partial result - show current recognition attempt
+                    self.currentPartialText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                
+                // Ensure UI state is properly set when we receive transcript updates
+                if !self.transcriptPermissionGranted {
+                    self.transcriptPermissionGranted = true
+                }
+                if !self.liveTranscriptActive {
+                    self.liveTranscriptActive = true
+                }
+            }
+        }
+    }
 
     // MARK: - Recording Functions
 
@@ -763,9 +871,9 @@ struct RecordingView: View {
                     print("🗣️ Transcription was already active, restoring UI state...")
                     transcriptEnabled = true
                     liveTranscriptActive = true
-
+                    transcriptPermissionGranted = true  // ✅ CRITICAL: Set permission if transcription is active
                     
-                    print("✅ Live transcription UI state restored")
+                    print("✅ Live transcription UI state restored with permissions")
                 } else {
                     print("📝 No active transcription detected")
                 }
@@ -796,6 +904,8 @@ struct RecordingView: View {
                 try await unifiedService.startRecordingWithNativeTranscription(to: url)
                 transcriptEnabled = true
                 liveTranscriptActive = true
+                // Ensure callback is set up for new recordings
+                setupTranscriptCallback(unifiedService)
             } else {
                 // Fall back to basic recording
                 try di.audio.startRecording(to: url)
@@ -815,19 +925,42 @@ struct RecordingView: View {
     }
 
     func togglePauseResume() {
-        do {
-            if isRecording {
-                try di.audio.pauseRecording(); isRecording = false
+        if isRecording {
+            // Pause both recording and transcription
+            do {
+                try di.audio.pauseRecording()
+                isRecording = false
+                
+                // Pause transcription if active
+                if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl, transcriptEnabled {
+                    unifiedService.disableTranscription()
+                    liveTranscriptActive = false
+                }
+                
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                // Optionally pause speech recognition when recording is paused
-                // (speech recognition can continue even when recording is paused)
-            } else {
-                try di.audio.resumeRecording(); isRecording = true
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } catch { 
+                self.error = "Recording operation failed: \(error.localizedDescription)"
             }
-        } catch { 
-            self.error = "Recording operation failed: \(error.localizedDescription)"
-            print("❌ Pause/Resume error: \(error)")
+        } else {
+            // Resume both recording and transcription
+            Task {
+                do {
+                    try di.audio.resumeRecording()
+                    isRecording = true
+                    
+                    // Resume transcription if it was enabled
+                    if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl, transcriptEnabled {
+                        try await unifiedService.enableTranscription()
+                        liveTranscriptActive = true
+                        // Re-establish callback after resume
+                        setupTranscriptCallback(unifiedService)
+                    }
+                    
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                } catch { 
+                    self.error = "Recording operation failed: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -854,7 +987,7 @@ struct RecordingView: View {
             // Small delay to ensure smooth transition
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.isSaving = false
-                self.showNamePrompt = true
+                self.showSavePopup = true
             }
         } catch { 
             self.isSaving = false
@@ -892,19 +1025,22 @@ struct RecordingView: View {
         }
     }
 
-    func saveNamedRecording() {
+    func saveNamedRecording(title: String, notes: String?) {
         do {
-            let title = nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? defaultTitle : nameText
             _ = try AudioFileStore.url(for: sessionID)
             // Store a relative path under Documents to avoid container UUID issues across launches
             let relativePath = "audio/\(sessionID.uuidString).m4a"
-            let rec = Recording(id: sessionID, title: title, createdAt: Date(), audioURL: relativePath, duration: lastDuration)
+            let rec = Recording(id: sessionID, title: title, createdAt: Date(), audioURL: relativePath, duration: lastDuration, notes: notes)
             try RecordingDataStore(context: modelContext).saveRecording(rec)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             NotificationCenter.default.post(name: .didSaveRecording, object: nil)
+            // Stop notification updates
+            di.notifications.showRecordingSuccessNotification()
+            showSavePopup = false
             onSave?(); dismiss()
         } catch {
             self.error = error.localizedDescription
+            showSavePopup = false
         }
     }
 
@@ -916,6 +1052,205 @@ struct RecordingView: View {
 
     func stopTimers() {
         timer?.invalidate(); timer = nil
+    }
+    
+    // MARK: - Interruption Handling
+    
+    private func handleInterruptionBegan() {
+        if !isInterrupted {
+            // Cache current transcript state before interruption
+            if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                unifiedService.cacheTranscript(lines: transcriptLines, partial: currentPartialText)
+            }
+            
+            isInterrupted = true
+            interruptionType = "phone call"
+            togglePauseResume()
+
+            // Provide haptic feedback
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+
+            // Show visual feedback
+            withAnimation(.easeInOut(duration: 0.3)) {
+                // UI will automatically update based on isInterrupted state
+            }
+        }
+    }
+    
+    private func handleRecordingPaused() {
+        isRecording = false
+        
+        // Provide haptic feedback
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        
+        // Update UI state
+        withAnimation(.easeInOut(duration: 0.2)) {
+            // Recording state updated, UI will reflect pause
+        }
+    }
+    
+    private func handleRecordingResumed() {
+        // Synchronize with actual audio service state
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            // Update recording state
+            let serviceRecording = unifiedService.isRecording
+            let serviceTranscription = unifiedService.isTranscriptionActive
+            let serviceTime = unifiedService.currentTime
+            
+            // Update UI state to match service
+            isRecording = serviceRecording
+            elapsed = serviceTime
+            
+            // Restore transcription state if it was active before interruption
+            if unifiedService.wasTranscriptionActiveBeforeInterruption {
+                transcriptEnabled = true
+                liveTranscriptActive = true
+                transcriptPermissionGranted = true
+                
+                // Re-establish transcript callback after resume
+                setupTranscriptCallback(unifiedService)
+                
+                // Force UI refresh to show existing transcript content
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        // UI state variables updated, will trigger refresh
+                    }
+                }
+            } else if serviceTranscription {
+                // Fallback: if service reports transcription active but we didn't track it
+                transcriptEnabled = true
+                liveTranscriptActive = true
+                transcriptPermissionGranted = true
+                setupTranscriptCallback(unifiedService)
+            }
+        }
+        
+        // Reset interruption state
+        isInterrupted = false
+        showResumePrompt = false
+        resumeAttempts = 0
+        
+        // Restart timers to ensure UI updates properly
+        if timer == nil && isRecording {
+            startTimers()
+        }
+        
+        // Resume notification updates
+        if isRecording {
+            di.notifications.startRecordingNotifications(title: "Recording Resumed")
+        }
+        
+        // Provide haptic feedback
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        
+        // Update UI state with animation
+        withAnimation(.easeInOut(duration: 0.3)) {
+            // State variables already updated above, animation will reflect changes
+        }
+    }
+    
+    private func handleAutoResumeAttemptFailed(attempts: Int, error: Error) {
+        resumeAttempts = attempts
+        
+        // Show resume prompt to user
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showResumePrompt = true
+        }
+        
+        // Provide haptic feedback
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    
+    private func manualResumeRecording() {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            unifiedService.forceResumeAfterInterruption()
+            
+            // Give a small delay for the audio service to process the resume
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.syncStateAfterResume()
+            }
+        }
+        
+        // Provide immediate feedback
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    private func syncStateAfterResume() {
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else { return }
+        
+        // Update recording state from audio service
+        let wasRecordingBefore = unifiedService.wasRecordingActiveBeforeInterruption
+        let wasTranscribingBefore = unifiedService.wasTranscriptionActiveBeforeInterruption
+        
+        // Update recording state
+        isRecording = unifiedService.isRecording
+        elapsed = unifiedService.currentTime
+        
+        // Reset interruption state
+        isInterrupted = false
+        showResumePrompt = false
+        resumeAttempts = 0
+        
+        // Restore transcription state if it was active before interruption
+        if wasTranscribingBefore {
+            if unifiedService.isTranscriptionActive {
+                // Transcription is already active, just restore UI state
+                transcriptEnabled = true
+                liveTranscriptActive = true
+                transcriptPermissionGranted = true
+                setupTranscriptCallback(unifiedService)
+                
+                // Force UI refresh to display transcript content properly
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    // State variables updated, will trigger proper display
+                }
+            } else {
+                // Transcription was active before but isn't now - restart it
+                Task {
+                    do {
+                        try await unifiedService.enableTranscription()
+                        await MainActor.run {
+                            self.transcriptEnabled = true
+                            self.liveTranscriptActive = true
+                            self.transcriptPermissionGranted = true
+                            self.setupTranscriptCallback(unifiedService)
+                            
+                            // Force UI refresh after manual restart
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                // State variables updated
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            self.error = "Failed to resume transcription: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Restart timers if needed
+        if timer == nil && isRecording {
+            startTimers()
+        }
+        
+        // Resume notifications
+        if isRecording {
+            di.notifications.startRecordingNotifications(title: "Recording Resumed")
+        }
+    }
+    
+    // MARK: - Transcript Cache Management
+    
+    private func restoreTranscriptCache(lines: [String], partial: String) {
+        transcriptLines = lines
+        currentPartialText = partial
+        
+        // Force UI refresh to show restored transcript
+        withAnimation(.easeInOut(duration: 0.3)) {
+            // State variables updated, UI will refresh
+        }
     }
 
     func timeString(from interval: TimeInterval, showMillis: Bool = false) -> String {

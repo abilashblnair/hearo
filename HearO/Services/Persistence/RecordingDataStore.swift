@@ -10,6 +10,9 @@ final class Recording: Identifiable {
     var audioURL: String
     var duration: TimeInterval
     
+    // User notes field
+    var notes: String?
+    
     // Transcript caching fields
     var transcriptText: String?
     var transcriptSegmentsData: Data? // JSON encoded TranscriptSegment array
@@ -21,12 +24,13 @@ final class Recording: Identifiable {
     var summaryCreatedAt: Date?
     var summaryLanguage: String?
 
-    init(id: UUID = UUID(), title: String, createdAt: Date = Date(), audioURL: String, duration: TimeInterval) {
+    init(id: UUID = UUID(), title: String, createdAt: Date = Date(), audioURL: String, duration: TimeInterval, notes: String? = nil) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
         self.audioURL = audioURL
         self.duration = duration
+        self.notes = notes
         self.transcriptText = nil
         self.transcriptSegmentsData = nil
         self.transcriptLanguage = nil

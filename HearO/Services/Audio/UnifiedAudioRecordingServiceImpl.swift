@@ -91,6 +91,11 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
         audioSessionManager.stopTranscription()
     }
     
+    func forceRestartSpeechRecognition() {
+        print("🔄 UnifiedAudioRecordingServiceImpl: Force restarting speech recognition...")
+        audioSessionManager.forceRestartSpeechRecognition()
+    }
+    
     // MARK: - Power Level Updates
     
     var onPowerUpdate: ((Float) -> Void)? {
@@ -105,5 +110,91 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
     
     var isTranscriptionActive: Bool {
         audioSessionManager.isTranscriptionActive
+    }
+    
+    // MARK: - Interruption Recovery
+    
+    /// Manually attempt to resume recording after an interruption (like a phone call)
+    func manualResumeAfterInterruption() {
+        audioSessionManager.manualResumeAfterInterruption()
+    }
+    
+    /// Check if there are operations waiting to resume after an interruption
+    var hasPendingResumeOperations: Bool {
+        audioSessionManager.hasPendingResumeOperations
+    }
+    
+    /// Configure how interruptions are handled
+    func configureInterruptionHandling(
+        pauseOnInterruption: Bool = true,
+        autoResumeAfterInterruption: Bool = true,
+        maxAutoResumeAttempts: Int = 3
+    ) {
+        audioSessionManager.configureInterruptionHandling(
+            pauseOnInterruption: pauseOnInterruption,
+            autoResumeAfterInterruption: autoResumeAfterInterruption,
+            maxAutoResumeAttempts: maxAutoResumeAttempts
+        )
+    }
+    
+    /// Disable automatic resume for current interruption
+    func disableAutoResumeForCurrentInterruption() {
+        audioSessionManager.disableAutoResumeForCurrentInterruption()
+    }
+    
+    /// Force resume even if auto-resume was disabled
+    func forceResumeAfterInterruption() {
+        audioSessionManager.forceResumeAfterInterruption()
+    }
+    
+    // MARK: - Interruption Callbacks
+    
+    var onInterruptionBegan: (() -> Void)? {
+        get { audioSessionManager.onInterruptionBegan }
+        set { audioSessionManager.onInterruptionBegan = newValue }
+    }
+    
+    var onRecordingPaused: (() -> Void)? {
+        get { audioSessionManager.onRecordingPaused }
+        set { audioSessionManager.onRecordingPaused = newValue }
+    }
+    
+    var onRecordingResumed: (() -> Void)? {
+        get { audioSessionManager.onRecordingResumed }
+        set { audioSessionManager.onRecordingResumed = newValue }
+    }
+    
+    var onAutoResumeAttemptFailed: ((Int, Error) -> Void)? {
+        get { audioSessionManager.onAutoResumeAttemptFailed }
+        set { audioSessionManager.onAutoResumeAttemptFailed = newValue }
+    }
+    
+    var onTranscriptCacheRestored: (([String], String) -> Void)? {
+        get { audioSessionManager.onTranscriptCacheRestored }
+        set { audioSessionManager.onTranscriptCacheRestored = newValue }
+    }
+    
+    // MARK: - Interruption State Inspection
+    
+    /// Check if recording was active before the interruption
+    var wasRecordingActiveBeforeInterruption: Bool {
+        audioSessionManager.wasRecordingActiveBeforeInterruption
+    }
+    
+    /// Check if transcription was active before the interruption
+    var wasTranscriptionActiveBeforeInterruption: Bool {
+        audioSessionManager.wasTranscriptionActiveBeforeInterruption
+    }
+    
+    // MARK: - Transcript Caching
+    
+    /// Get cached transcript data
+    func getCachedTranscript() -> (lines: [String], partial: String) {
+        return audioSessionManager.getCachedTranscript()
+    }
+    
+    /// Manually cache transcript data from UI
+    func cacheTranscript(lines: [String], partial: String) {
+        audioSessionManager.cacheTranscript(lines: lines, partial: partial)
     }
 }
