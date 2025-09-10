@@ -197,7 +197,6 @@ struct RecordingView: View {
                                                     }
                                                     .padding(.top, 40)
                                                     .onAppear {
-                                                        print("📝 DEBUG: Showing 'listening' state - lines:\(transcriptLines.count), partial:'\(currentPartialText)', permission:\(transcriptPermissionGranted), liveActive:\(liveTranscriptActive)")
                                                     }
                                                 }
 
@@ -375,7 +374,6 @@ struct RecordingView: View {
                                                     }
                                                     .padding(.top, 40)
                                                     .onAppear {
-                                                        print("📝 DEBUG: Showing 'listening' state - lines:\(transcriptLines.count), partial:'\(currentPartialText)', permission:\(transcriptPermissionGranted), liveActive:\(liveTranscriptActive)")
                                                     }
                                                 }
 
@@ -669,8 +667,8 @@ struct RecordingView: View {
             if showSavePopup {
                 SaveRecordingPopupView(
                     duration: lastDuration,
-                    onSave: { title, notes in
-                        saveNamedRecording(title: title, notes: notes)
+                    onSave: { title, notes, folder in
+                        saveNamedRecording(title: title, notes: notes, folder: folder)
                     },
                     onCancel: {
                         showSavePopup = false
@@ -854,7 +852,6 @@ struct RecordingView: View {
 
     private func attachOrStart() async {
         if di.audio.isSessionActive {
-            print("🔗 Attaching to existing recording session...")
             
             // Restore basic recording state
             isRecording = di.audio.isRecording
@@ -868,18 +865,14 @@ struct RecordingView: View {
             // Restore transcription state if it was already active
             if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
                 if unifiedService.isTranscriptionActive {
-                    print("🗣️ Transcription was already active, restoring UI state...")
                     transcriptEnabled = true
                     liveTranscriptActive = true
                     transcriptPermissionGranted = true  // ✅ CRITICAL: Set permission if transcription is active
                     
-                    print("✅ Live transcription UI state restored with permissions")
                 } else {
-                    print("📝 No active transcription detected")
                 }
             }
             
-            print("✅ Successfully attached to existing session (Recording: \(isRecording), Transcription: \(transcriptEnabled))")
         } else {
             await startRecording()
         }
@@ -891,7 +884,6 @@ struct RecordingView: View {
         if Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
             di.adManager.presentInterstitial(from: rootVC) { _ in
                 // Continue with recording after ad
-                print("🎬 Recording ad completed - starting recording")
             }
         }
             
@@ -1025,13 +1017,16 @@ struct RecordingView: View {
         }
     }
 
-    func saveNamedRecording(title: String, notes: String?) {
+    func saveNamedRecording(title: String, notes: String?, folder: RecordingFolder?) {
         do {
             _ = try AudioFileStore.url(for: sessionID)
             // Store a relative path under Documents to avoid container UUID issues across launches
             let relativePath = "audio/\(sessionID.uuidString).m4a"
-            let rec = Recording(id: sessionID, title: title, createdAt: Date(), audioURL: relativePath, duration: lastDuration, notes: notes)
-            try RecordingDataStore(context: modelContext).saveRecording(rec)
+            let rec = Recording(id: sessionID, title: title, createdAt: Date(), audioURL: relativePath, duration: lastDuration, notes: notes, folder: folder)
+            
+            let folderStore = FolderDataStore(context: modelContext)
+            try folderStore.saveRecording(rec, to: folder)
+            
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             NotificationCenter.default.post(name: .didSaveRecording, object: nil)
             // Stop notification updates
@@ -1180,7 +1175,7 @@ struct RecordingView: View {
         guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else { return }
         
         // Update recording state from audio service
-        let wasRecordingBefore = unifiedService.wasRecordingActiveBeforeInterruption
+        let _ = unifiedService.wasRecordingActiveBeforeInterruption
         let wasTranscribingBefore = unifiedService.wasTranscriptionActiveBeforeInterruption
         
         // Update recording state

@@ -30,8 +30,6 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
     }
 
     private func setupAdManager() {
-        print("🎯 GoogleAdManager: Initializing...")
-        print("📱 Advertising ID: \(ASIdentifierManager.shared().advertisingIdentifier)")
 
         // Preload ad on initialization
         preloadAd()
@@ -40,18 +38,15 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
     // MARK: - Ad Loading
     func preloadAd() {
         guard !isAdLoading else {
-            print("⏳ Ad already loading, skipping...")
             return
         }
 
         // Don't reload too frequently (minimum 30 seconds between loads)
         if let lastLoad = lastAdLoadTime,
            Date().timeIntervalSince(lastLoad) < 30 {
-            print("⏸️ Skipping ad load - too recent (< 30s)")
             return
         }
 
-        print("🚀 Starting interstitial ad load...")
         isAdLoading = true
 
         let request = createAdRequest()
@@ -69,7 +64,6 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
                 }
 
                 guard let ad = ad else {
-                    print("❌ No ad returned, but no error")
                     return
                 }
 
@@ -90,34 +84,19 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
         self.interstitialAd = ad
         self.interstitialAd?.fullScreenContentDelegate = self
 
-        print("✅ Interstitial ad loaded successfully!")
-        print("📊 Ad loaded at: \(Date())")
 
         // Optional: Log ad metadata - simplified logging to avoid API issues
-        print("📋 Ad Response Info: \(ad.responseInfo)")
     }
 
     private func handleAdLoadError(_ error: Error) {
-        print("❌ Failed to load interstitial ad")
-        print("🔍 Error: \(error.localizedDescription)")
-        print("🏷️ Domain: \((error as NSError).domain)")
-        print("🔢 Code: \((error as NSError).code)")
 
         // Log specific error codes for debugging
         let nsError = error as NSError
         switch nsError.code {
-        case 0: // kGADErrorInvalidRequest
-            print("💡 Invalid request - check ad unit ID and request parameters")
-        case 1: // kGADErrorNoFill
-            print("💡 No ad inventory available - try again later")
-        case 2: // kGADErrorNetworkError
-            print("💡 Network error - check internet connection")
-        case 3: // kGADErrorServerError
-            print("💡 Server error - AdMob server issue")
-        case 8: // kGADErrorInvalidArgument
-            print("💡 Invalid argument - check implementation")
+        case 0, 1, 2, 3, 8: // Known GAD error codes
+            break
         default:
-            print("💡 Other error - code: \(nsError.code)")
+            break
         }
 
         self.interstitialAd = nil
@@ -126,13 +105,11 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
     // MARK: - Ad Presentation
     func presentInterstitial(from rootViewController: UIViewController, onDismissed: @escaping (Bool) -> Void) {
         guard let interstitial = interstitialAd else {
-            print("❌ No interstitial ad available to present")
             onDismissed(false) // Ad was not shown
             preloadNextAd() // Try to load next ad
             return
         }
 
-        print("🎬 Presenting interstitial ad...")
 
         // Store completion handler
         onAdDismissedCompletion = onDismissed
@@ -167,12 +144,9 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
 extension GoogleAdManager: FullScreenContentDelegate {
 
     func adWillPresentFullScreenContent(_ ad: FullScreenPresentingAd) {
-        print("🎬 Interstitial ad will present full screen content")
     }
 
     func ad(_ ad: FullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
-        print("❌ Interstitial ad failed to present")
-        print("🔍 Error: \(error.localizedDescription)")
 
         // Notify completion that ad failed to show
         onAdDismissedCompletion?(false)
@@ -183,11 +157,9 @@ extension GoogleAdManager: FullScreenContentDelegate {
     }
 
     func adWillDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
-        print("👋 Interstitial ad will dismiss")
     }
 
     func adDidDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
-        print("✅ Interstitial ad dismissed")
 
         // Notify completion that ad was successfully shown and dismissed
         onAdDismissedCompletion?(true)

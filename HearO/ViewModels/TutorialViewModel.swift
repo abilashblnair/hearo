@@ -24,7 +24,6 @@ class TutorialViewModel: ObservableObject {
     }
     private func loadPages() {
         guard let url = Bundle.main.url(forResource: "tutorial_pages", withExtension: "json") else {
-            print("[TutorialViewModel] Error: tutorial_pages.json not found in main bundle.")
             return
         }
         do {
@@ -32,7 +31,6 @@ class TutorialViewModel: ObservableObject {
             let decoded = try JSONDecoder().decode([TutorialPage].self, from: data)
             self.pages = decoded
         } catch {
-            print("[TutorialViewModel] Error loading or decoding tutorial_pages.json: \(error)")
         }
     }
 }

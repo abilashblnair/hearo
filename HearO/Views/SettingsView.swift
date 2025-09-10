@@ -1,209 +1,274 @@
 import SwiftUI
-import MessageUI
 import WebKit
 
 struct SettingsView: View {
-    @State private var showMail = false
-    @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
-    @State private var showRating: Bool = false
-    @State private var rating: Int = 0
-    @State private var showAppStore: Bool = false
-    @State private var navigationPath = NavigationPath()
-
-    let appStoreURL = URL(string: "https://apps.apple.com/in/app/auryo/id6751236806")!
+    @EnvironmentObject var di: ServiceContainer
+    @StateObject private var settings = SettingsService.shared
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            VStack(spacing: 0) {
-                if UIDevice.current.userInterfaceIdiom == .pad {
-                    // iPad centered layout
-                    GeometryReader { geometry in
-                        HStack {
-                            Spacer()
-
-                            ScrollView {
-                                VStack(spacing: 24) {
-                                    settingsContent
-                                }
-                                .padding(.horizontal, 40)
-                                .padding(.vertical, 20)
+        NavigationView {
+            List {
+                // Quick toggle for folder management with immediate effect
+                Section(header: Text("Quick Settings")) {
+                    HStack {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Folder Management")
+                                Text("Organize recordings in folders")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
-                            .frame(maxWidth: min(geometry.size.width * 0.8, 800))
-
-                            Spacer()
+                        } icon: {
+                            Image(systemName: "folder.fill")
+                                .foregroundColor(.blue)
+                        }
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: $settings.isFolderManagementEnabled)
+                            .labelsHidden()
+                    }
+                }
+                
+                Section(header: Text("Settings Categories")) {
+                    NavigationLink(destination: GeneralSettingsView()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("General")
+                                Text("Recording, audio, and app settings")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "gearshape.fill")
+                                .foregroundColor(.blue)
                         }
                     }
-                } else {
-                    // iPhone layout
-                    List {
-                        settingsContent
+                    
+                    NavigationLink(destination: RecordingManagementView()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Storage & Files")
+                                Text("Manage recordings and folders")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "externaldrive.fill")
+                                .foregroundColor(.green)
+                        }
+                    }
+                    
+                    NavigationLink(destination: AppInfoView()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("About & Support")
+                                Text("App info, feedback, and legal")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.orange)
+                        }
                     }
                 }
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
-            .navigationDestination(for: WebviewType.self) { webviewType in
-                WebView(webviewType: webviewType)
-                    .navigationTitle(webviewType.title)
-                    .navigationBarTitleDisplayMode(.inline)
-            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+}
+
+// MARK: - Recording Management View
+struct RecordingManagementView: View {
+    @EnvironmentObject var di: ServiceContainer
+    @Environment(\.modelContext) private var modelContext
+    @StateObject private var settings = SettingsService.shared
+    
+    @State private var folders: [RecordingFolder] = []
+    @State private var allRecordings: [Recording] = []
+    @State private var storageUsed: String = "Calculating..."
+    
+    var body: some View {
+        List {
+            Section(header: Text("Storage Information")) {
+                HStack {
+                    Label("Storage Used", systemImage: "externaldrive")
+                    Spacer()
+                    Text(storageUsed)
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Label("Total Recordings", systemImage: "waveform")
+                    Spacer()
+                    Text("\(allRecordings.count)")
+                        .foregroundColor(.secondary)
+                }
+                
+                if settings.isFolderManagementEnabled {
+                    HStack {
+                        Label("Folders", systemImage: "folder")
+                        Spacer()
+                        Text("\(folders.count)")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            if settings.isFolderManagementEnabled {
+                Section(header: Text("Folder Actions")) {
+                    Button(action: cleanupEmptyFolders) {
+                        Label("Clean Empty Folders", systemImage: "trash")
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
+            
+            Section(header: Text("Data Management")) {
+                Button(action: exportAllData) {
+                    Label("Export All Data", systemImage: "square.and.arrow.up")
+                        .foregroundColor(.blue)
+                }
+                
+                Button(action: clearAllData) {
+                    Label("Clear All Data", systemImage: "exclamationmark.triangle")
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .navigationTitle("Storage & Files")
+        .onAppear {
+            loadData()
+            calculateStorageUsed()
+        }
+    }
+    
+    private func loadData() {
+        let folderStore = FolderDataStore(context: modelContext)
+        do {
+            folders = try folderStore.fetchFolders()
+            allRecordings = try folderStore.fetchAllRecordings()
+        } catch {
+        }
+    }
+    
+    private func calculateStorageUsed() {
+        DispatchQueue.global(qos: .utility).async {
+            var totalSize: Int64 = 0
+            let fileManager = FileManager.default
+            
+            for recording in allRecordings {
+                let url = recording.finalAudioURL()
+                if let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+                   let size = attributes[.size] as? Int64 {
+                    totalSize += size
+                }
+            }
+            
+            DispatchQueue.main.async {
+                storageUsed = ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
+            }
+        }
+    }
+    
+    private func cleanupEmptyFolders() {
+        let folderStore = FolderDataStore(context: modelContext)
+        do {
+            let emptyFolders = folders.filter { $0.recordings.isEmpty && !$0.isDefault }
+            for folder in emptyFolders {
+                try folderStore.deleteFolder(folder)
+            }
+            loadData()
+        } catch {
+        }
+    }
+    
+    private func exportAllData() {
+        // Implementation for data export
+    }
+    
+    private func clearAllData() {
+        // Implementation with confirmation dialog
+    }
+}
+
+// MARK: - App Info View
+struct AppInfoView: View {
+    @State private var showRating: Bool = false
+    @State private var rating: Int = 0
+    
+    let appStoreURL = URL(string: "https://apps.apple.com/in/app/auryo/id6751236806")!
+    
+    var body: some View {
+        List {
+            Section(header: Text("App Information")) {
+                HStack {
+                    Label("Version", systemImage: "app.badge")
+                    Spacer()
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Label("Build", systemImage: "hammer")
+                    Spacer()
+                    Text(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-")
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Section(header: Text("Legal")) {
+                NavigationLink(destination: WebView(webviewType: .aboutUs)) {
+                    Label("About Us", systemImage: "info.circle")
+                }
+                
+                NavigationLink(destination: WebView(webviewType: .terms)) {
+                    Label("Terms & Conditions", systemImage: "doc.text")
+                }
+                
+                NavigationLink(destination: WebView(webviewType: .privacy)) {
+                    Label("Privacy Policy", systemImage: "hand.raised")
+                }
+            }
+            
+            Section(header: Text("Support")) {
+                Button(action: sendFeedback) {
+                    Label("Send Feedback", systemImage: "envelope")
+                        .foregroundColor(.blue)
+                }
+                
+                Button(action: { showRating = true }) {
+                    Label("Rate App", systemImage: "star")
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+        .navigationTitle("About & Support")
         .sheet(isPresented: $showRating) {
             RatingSheet(rating: $rating, onSubmit: handleRating)
         }
     }
-
-    @ViewBuilder
-    private var settingsContent: some View {
-        Section(header: sectionHeader("General")) {
-            settingsRow(
-                title: "About Us",
-                icon: "info.circle",
-                action: { navigationPath.append(WebviewType.aboutUs) }
-            )
-            settingsRow(
-                title: "Terms & Conditions",
-                icon: "doc.text",
-                action: { navigationPath.append(WebviewType.terms) }
-            )
-            settingsRow(
-                title: "Privacy Policy",
-                icon: "hand.raised",
-                action: { navigationPath.append(WebviewType.privacy) }
-            )
-            appVersionRow
-        }
-
-        Section(header: sectionHeader("Support")) {
-            settingsRow(
-                title: "Send Feedback",
-                icon: "envelope",
-                action: sendFeedback
-            )
-            settingsRow(
-                title: "App Review",
-                icon: "star",
-                action: openAppStoreFeedback
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func sectionHeader(_ title: String) -> some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack {
-                Text(title)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
-            .padding(.top, 16)
-        } else {
-            Text(title)
-        }
-    }
-
-    @ViewBuilder
-    private func settingsRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            Button(action: action) {
-                HStack(spacing: 16) {
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                        .frame(width: 30)
-
-                    Text(title)
-                        .font(.body)
-                        .foregroundColor(.primary)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.systemBackground))
-                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-                )
-            }
-            .buttonStyle(PlainButtonStyle())
-        } else {
-            Button(action: action) {
-                Label(title, systemImage: icon)
-                    .foregroundColor(.primary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var appVersionRow: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack(spacing: 16) {
-                Image(systemName: "app.badge")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-                    .frame(width: 30)
-
-                Text("App Version")
-                    .font(.body)
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-        } else {
-            HStack {
-                Label("App Version", systemImage: "app.badge")
-                Spacer()
-                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    func openWeb(type: WebviewType) {
-        navigationPath.append(type)
-    }
-
-    func handleRating(_ value: Int) {
-        showRating = false
-        if value >= 4 {
-            // Redirect to App Store
-            UIApplication.shared.open(appStoreURL)
-        } else {
-            // Show feedback option for ratings less than 4
-            sendFeedback()
-        }
-    }
-
-    func sendFeedback() {
+    
+    private func sendFeedback() {
         let email = Constants.feedbackEmail
         if let url = URL(string: "mailto:\(email)") {
             UIApplication.shared.open(url)
         }
     }
-
-    func openAppStoreFeedback() {
-        UIApplication.shared.open(appStoreURL)
+    
+    private func handleRating(_ value: Int) {
+        showRating = false
+        if value >= 4 {
+            UIApplication.shared.open(appStoreURL)
+        } else {
+            sendFeedback()
+        }
     }
 }
+
+// MARK: - Shared Components
 
 struct RatingSheet: View {
     @Binding var rating: Int
@@ -215,7 +280,7 @@ struct RatingSheet: View {
                 .font(.title)
                 .bold()
             HStack {
-                ForEach(1...5, id: \ .self) { i in
+                ForEach(1...5, id: \.self) { i in
                     Image(systemName: i <= rating ? "star.fill" : "star")
                         .resizable()
                         .frame(width: 40, height: 40)
@@ -254,6 +319,7 @@ enum Constants {
 
 enum WebviewType: Hashable {
     case aboutUs, terms, privacy
+    
     var url: String {
         switch self {
         case .aboutUs:

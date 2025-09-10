@@ -163,15 +163,13 @@ struct AAIStreamingTranscriptView: View {
         }
         
         guard status != .error, error == nil else {
-            print("Audio conversion error: \(error?.localizedDescription ?? "Unknown")")
             return
         }
         
         // Convert to Data and send
         if let data = targetBuffer.toData() {
             webSocket?.send(.data(data), completionHandler: { error in
-                if let error = error {
-                    print("WebSocket send error: \(error)")
+                if error != nil {
                 }
             })
         }

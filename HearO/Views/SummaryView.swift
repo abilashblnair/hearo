@@ -708,17 +708,7 @@ struct SummaryView: View {
 }
 
 // MARK: - Activity View Controller for PDF Sharing
-
-struct ActivityViewController: UIViewControllerRepresentable {
-    let activityItems: [Any]
-    
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-        return controller
-    }
-    
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
+// (Using shared ActivityViewController from RecordListView.swift)
 
 // MARK: - Supporting Views
 
@@ -1177,6 +1167,5 @@ func generateHapticFeedback(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
     )
 
     SummaryView(summary: sampleSummary, sessionDuration: 1800, sessionTitle: "Sample Recording") { timestamp in
-        print("Seeking to \(timestamp)")
     }
 }

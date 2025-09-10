@@ -219,7 +219,6 @@ final class AudioSessionManager: NSObject {
         // Then start transcription using the same audio engine
         try startTranscription()
         
-        print("🎙️ AudioSessionManager: Recording with native transcription started")
     }
     
     func startRecording(to url: URL) throws {
@@ -406,13 +405,10 @@ final class AudioSessionManager: NSObject {
             
             // Start audio engine
             try audioEngine.start()
-            print("✅ Audio engine restarted for recording resume")
         } else {
-            print("✅ Audio engine still running from interruption")
             
             // Ensure we still have a valid audio file
             if audioFile == nil {
-                print("⚠️ Audio file was lost, this shouldn't happen with engine still running")
                 let recordingFormat = self.recordingFormat ?? AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
                 audioFile = try AVAudioFile(forWriting: recordingURL, settings: recordingFormat.settings)
             }
@@ -422,32 +418,23 @@ final class AudioSessionManager: NSObject {
                 throw NSError(domain: "AudioSession", code: 4, userInfo: [NSLocalizedDescriptionKey: "Audio file is invalid for resume"])
             }
             
-            print("✅ Existing tap and audio file verified for resume")
         }
         
         // Resume recording state
         isRecordingActive = true
         startMetering()
         
-        print("▶️ Recording successfully resumed to \(recordingURL.lastPathComponent)")
-        print("   📊 Final resume state: recording=\(isRecordingActive), engine=\(audioEngine.isRunning), file=\(audioFile != nil)")
-        print("   📊 Audio session: active=\(audioSession.isOtherAudioPlaying), category=\(audioSession.category)")
         
         // Verify audio input is available
         if !audioSession.isInputAvailable {
-            print("⚠️ WARNING: Audio input not available after resume!")
-        } else {
-            print("✅ Audio input is available")
         }
     }
     
     func stopRecording() throws -> TimeInterval {
         guard let startTime = self.startTime else { 
-            print("⚠️ No start time found, returning 0 duration")
             return 0
         }
         
-        print("🛑 Stopping recording...")
         isRecordingActive = false
         stopMetering()
         
@@ -458,7 +445,6 @@ final class AudioSessionManager: NSObject {
         
         // If transcription is also active, coordinate the shutdown
         if transcriptionEnabled {
-            print("🔄 Recording and transcription both active, coordinating shutdown...")
             
             // Stop transcription gracefully first
             stopTranscription()
@@ -467,14 +453,12 @@ final class AudioSessionManager: NSObject {
             inputNode.removeTap(onBus: 0)
             if audioEngine.isRunning {
                 audioEngine.stop()
-                print("🛑 Audio engine stopped")
             }
         } else {
             // Only recording was active, simple cleanup
             inputNode.removeTap(onBus: 0)
             if audioEngine.isRunning {
                 audioEngine.stop()
-                print("🛑 Audio engine stopped")
             }
         }
         
@@ -498,36 +482,25 @@ final class AudioSessionManager: NSObject {
         
         // CRITICAL: Check speech authorization status before starting
         let authStatus = SFSpeechRecognizer.authorizationStatus()
-        print("🎤 Speech authorization status: \(authStatus)")
         
         if authStatus != .authorized {
-            print("❌ Speech recognition not authorized: \(authStatus)")
-            print("   - This might be the reason why speech recognition isn't working after resume")
             throw NSError(domain: "SpeechRecognition", code: 0, userInfo: [NSLocalizedDescriptionKey: "Speech recognition permission denied: \(authStatus). Please check app permissions in Settings."])
         }
         
         // Initialize speech recognizer
-        print("🗣️ Initializing speech recognizer...")
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         
         if let speechRecognizer = speechRecognizer {
-            print("   - Speech recognizer created successfully")
-            print("   - Speech recognizer available: \(speechRecognizer.isAvailable)")
             if !speechRecognizer.isAvailable {
-                print("   ❌ Speech recognizer is not available!")
-                print("   - This might be due to system restrictions after interruption")
-                print("   - Waiting a moment and trying again...")
                 
                 // Wait a moment and try again - sometimes the recognizer needs time after interruption
                 Thread.sleep(forTimeInterval: 0.5)
-                print("   - Rechecking availability: \(speechRecognizer.isAvailable)")
                 
                 if !speechRecognizer.isAvailable {
                     throw NSError(domain: "SpeechRecognition", code: 1, userInfo: [NSLocalizedDescriptionKey: "Speech recognizer not available after interruption - may need system restart"])
                 }
             }
         } else {
-            print("   ❌ Failed to create speech recognizer!")
             throw NSError(domain: "SpeechRecognition", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create speech recognizer"])
         }
         
@@ -573,18 +546,13 @@ final class AudioSessionManager: NSObject {
             try audioEngine.start()
         } else {
             // Recording is already active - need to reinstall tap to include transcription
-            print("🎙️ Transcription joining existing recording session")
-            print("   - Audio engine running: \(audioEngine.isRunning)")
-            print("   - Recording active: \(isRecordingActive)")
             
             // Verify audio engine is running (should be from recording)
             if !audioEngine.isRunning {
-                print("⚠️ Audio engine not running despite recording being active - this is a problem!")
                 throw NSError(domain: "AudioSession", code: 4, userInfo: [NSLocalizedDescriptionKey: "Audio engine not running for existing recording"])
             }
             
             // CRITICAL FIX: Reinstall the audio tap to include transcription support
-            print("🔄 Reinstalling audio tap to add transcription support to existing recording")
             
             // Remove existing tap
             inputNode.removeTap(onBus: 0)
@@ -593,7 +561,6 @@ final class AudioSessionManager: NSObject {
             let nativeFormat = inputNode.outputFormat(forBus: 0)
             let recordingFormat = self.recordingFormat ?? AVAudioFormat(standardFormatWithSampleRate: nativeFormat.sampleRate, channels: 1)!
             
-            print("   - Using formats: native=\(nativeFormat.sampleRate)Hz/\(nativeFormat.channelCount)ch, recording=\(recordingFormat.sampleRate)Hz/\(recordingFormat.channelCount)ch")
             
             // Reinstall tap with BOTH recording AND transcription support
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) { [weak self] buffer, time in
@@ -616,7 +583,6 @@ final class AudioSessionManager: NSObject {
                                 do {
                                     try audioFile.write(from: convertedBuffer)
                                 } catch {
-                                    print("❌ Error writing to recording file during transcription join: \(error)")
                                     DispatchQueue.main.async {
                                         self.onError?(error)
                                     }
@@ -628,7 +594,6 @@ final class AudioSessionManager: NSObject {
                         do {
                             try audioFile.write(from: buffer)
                         } catch {
-                            print("❌ Error writing to recording file during transcription join: \(error)")
                             DispatchQueue.main.async {
                                 self.onError?(error)
                             }
@@ -645,16 +610,10 @@ final class AudioSessionManager: NSObject {
                 self.updatePowerLevel(from: buffer)
             }
             
-            print("✅ Audio tap reinstalled with both recording and transcription support")
         }
         
         // Start recognition task
-        print("🗣️ Starting speech recognition task...")
-        print("   - Speech recognizer available: \(speechRecognizer.isAvailable)")
-        print("   - Recognition request created: \(recognitionRequest != nil)")
-        print("   - Audio session active: \(!audioSession.isOtherAudioPlaying)")
         
-        print("🗣️ Creating speech recognition task...")
         
         // Create the recognition task
         // CRITICAL: Track if we're getting any callbacks at all
@@ -920,15 +879,12 @@ final class AudioSessionManager: NSObject {
     /// Manually attempt to resume audio operations after an interruption
     /// This can be called by UI components if automatic resume fails
     func manualResumeAfterInterruption() {
-        print("🔄 Manual resume requested by UI")
         
         guard wasRecordingBeforeInterruption || wasTranscribingBeforeInterruption else {
-            print("   - No operations were active before interruption")
             return
         }
         
         if isCallActive {
-            print("   - Call still active, cannot resume yet")
             scheduleResumeAttempt()
             return
         }
@@ -957,16 +913,11 @@ final class AudioSessionManager: NSObject {
         self.shouldAutoResumeAfterInterruption = autoResumeAfterInterruption
         self.maximumAutoResumeAttempts = min(max(maxAutoResumeAttempts, 1), 10)
         
-        print("🔧 Interruption handling configured:")
-        print("   - Pause on interruption: \(pauseOnInterruption)")
-        print("   - Auto resume: \(autoResumeAfterInterruption)")  
-        print("   - Max resume attempts: \(self.maximumAutoResumeAttempts)")
     }
     
     /// Permanently disable automatic resume for the current interruption
     func disableAutoResumeForCurrentInterruption() {
         guard wasRecordingBeforeInterruption || wasTranscribingBeforeInterruption else {
-            print("⚠️ No active interruption to disable auto-resume for")
             return
         }
         
@@ -974,13 +925,11 @@ final class AudioSessionManager: NSObject {
         resumeTimer = nil
         currentResumeAttempts = maximumAutoResumeAttempts + 1 // Exceed limit
         
-        print("🔕 Auto-resume disabled for current interruption")
     }
     
     /// Manually force resume even if auto-resume was disabled
     func forceResumeAfterInterruption() {
         guard wasRecordingBeforeInterruption || wasTranscribingBeforeInterruption else {
-            print("⚠️ No operations were active before interruption")
             return
         }
         
@@ -1045,15 +994,9 @@ final class AudioSessionManager: NSObject {
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
         
-        let interruptionReason = userInfo[AVAudioSessionInterruptionReasonKey] as? UInt
-        let wasSuspended = userInfo[AVAudioSessionInterruptionWasSuspendedKey] as? Bool ?? false
+        let _ = userInfo[AVAudioSessionInterruptionReasonKey] as? UInt
+        let _ = userInfo[AVAudioSessionInterruptionWasSuspendedKey] as? Bool ?? false
         
-        print("🔔 Audio interruption: \(type == .began ? "BEGAN" : "ENDED")")
-        print("   - Reason: \(interruptionReason?.description ?? "unknown")")
-        print("   - Was suspended: \(wasSuspended)")
-        print("   - Call active: \(isCallActive)")
-        print("   - Currently recording: \(isRecordingActive)")
-        print("   - Currently transcribing: \(transcriptionEnabled)")
         
         switch type {
         case .began:
@@ -1061,7 +1004,7 @@ final class AudioSessionManager: NSObject {
         case .ended:
             handleInterruptionEnded(userInfo: userInfo)
         @unknown default:
-            print("⚠️ Unknown interruption type")
+            break
         }
     }
     
@@ -1088,18 +1031,15 @@ final class AudioSessionManager: NSObject {
         if isRecordingActive && shouldPauseOnInterruption {
             do {
                 try pauseRecording()
-                print("   - ✅ Recording paused successfully")
                 
                 // Notify UI about pause
                 DispatchQueue.main.async { [weak self] in
                     self?.onRecordingPaused?()
                 }
             } catch {
-                print("   - ❌ Failed to pause recording: \(error)")
                 onError?(error)
             }
         } else if isRecordingActive {
-            print("   - ⚠️ Recording NOT paused (pauseOnInterruption disabled)")
         }
         
         // Stop transcription but preserve audio engine for recording resume
@@ -1111,11 +1051,9 @@ final class AudioSessionManager: NSObject {
                 recognitionTask = nil
                 recognitionRequest = nil
                 transcriptionEnabled = false
-                print("   - ✅ Transcription stopped (audio engine preserved for recording)")
             } else {
                 // No recording, safe to stop everything
                 stopTranscription()
-                print("   - ✅ Transcription stopped")
             }
         }
         
@@ -1123,38 +1061,27 @@ final class AudioSessionManager: NSObject {
         AudioStateManager.shared.stopRecording()
         AudioStateManager.shared.stopStandaloneTranscript()
         
-        print("🔴 Interruption handling complete")
     }
     
     private func handleInterruptionEnded(userInfo: [AnyHashable: Any]) {
-        print("🟢 Interruption ended, evaluating resume conditions...")
         
         let options = AVAudioSession.InterruptionOptions(
             rawValue: userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
         )
         
-        print("   - Interruption options: \(options)")
-        print("   - Should resume suggested: \(options.contains(.shouldResume))")
-        print("   - Call still active: \(isCallActive)")
-        print("   - Time since interruption: \(lastInterruptionTime?.timeIntervalSinceNow ?? 0)s")
-        print("   - Auto-resume enabled: \(shouldAutoResumeAfterInterruption)")
-        print("   - Resume attempts: \(currentResumeAttempts)/\(maximumAutoResumeAttempts)")
         
         // Check if auto-resume is disabled
         if !shouldAutoResumeAfterInterruption {
-            print("   - 🔕 Auto-resume disabled - manual intervention required")
             return
         }
         
         // Check if we've exceeded maximum retry attempts
         if currentResumeAttempts >= maximumAutoResumeAttempts {
-            print("   - 🛑 Maximum auto-resume attempts reached - manual intervention required")
             return
         }
         
         // Don't resume immediately if a call is still active
         if isCallActive {
-            print("   - ⏳ Call still active, will retry resume later")
             scheduleResumeAttempt()
             return
         }
@@ -1163,7 +1090,6 @@ final class AudioSessionManager: NSObject {
         if shouldAttemptResume(options: options) {
             attemptResume()
         } else {
-            print("   - ⏳ Conditions not met for immediate resume, scheduling retry")
             scheduleResumeAttempt()
         }
     }
@@ -1187,16 +1113,11 @@ final class AudioSessionManager: NSObject {
             self?.attemptResumeAfterDelay()
         }
         
-        print("   - ⏰ Scheduled resume attempt in \(delaySeconds) seconds")
     }
     
     private func attemptResumeAfterDelay() {
-        print("🔄 Attempting delayed resume...")
-        print("   - Call still active: \(isCallActive)")
-        print("   - Audio session interrupted: \(audioSession.isOtherAudioPlaying)")
         
         if isCallActive {
-            print("   - ⏳ Call still active, will retry again")
             scheduleResumeAttempt()
             return
         }
@@ -1206,40 +1127,27 @@ final class AudioSessionManager: NSObject {
     
     private func attemptResume() {
         currentResumeAttempts += 1
-        print("🟢 Attempting to resume audio operations (attempt \(currentResumeAttempts)/\(maximumAutoResumeAttempts))...")
-        print("   - State before resume: recording=\(wasRecordingBeforeInterruption), transcription=\(wasTranscribingBeforeInterruption)")
-        print("   - Current audio state: recording=\(isRecordingActive), transcription=\(transcriptionEnabled)")
-        print("   - Audio session active: \(audioSession.isOtherAudioPlaying)")
         
         var resumeSuccessful = true
         var resumeError: Error?
         
         // First, try to reactivate audio session
         do {
-            print("   - 🔄 Attempting to reactivate audio session...")
             
             // Check if audio session is already active
             if audioSession.isOtherAudioPlaying {
-                print("   - ⚠️ Other audio is playing - may need to deactivate first")
             }
             
             try configureAudioSession()
-            print("   - ✅ Audio session reactivated successfully")
             
             // Verify critical audio session properties
-            print("   - 📊 Session verification: category=\(audioSession.category), inputAvailable=\(audioSession.isInputAvailable)")
             
             if !audioSession.isInputAvailable {
-                print("   - ⚠️ WARNING: No audio input available after reactivation!")
                 #if !targetEnvironment(simulator)
-                print("   - 🔍 This might prevent recording from working properly")
                 #endif
             }
             
         } catch {
-            print("   - ❌ Failed to reactivate audio session: \(error)")
-            print("   - 🔍 Audio session error details: \((error as NSError).domain), code: \((error as NSError).code)")
-            print("   - 📊 Session state: category=\(audioSession.category), otherAudioPlaying=\(audioSession.isOtherAudioPlaying)")
             resumeSuccessful = false
             resumeError = error
             onError?(error)
@@ -1248,40 +1156,26 @@ final class AudioSessionManager: NSObject {
         // Resume recording if it was active and session was reactivated
         if resumeSuccessful && wasRecordingBeforeInterruption {
             do {
-                print("   - 🎙️ Attempting to resume recording...")
-                print("   - 📊 Pre-resume state: engine=\(audioEngine.isRunning), recording=\(isRecordingActive), url=\(recordingURL?.lastPathComponent ?? "nil")")
                 
                 // CRITICAL: Verify audio engine state before resume
                 if !audioEngine.isRunning {
-                    print("   - ⚠️ Audio engine was stopped during interruption - this is expected")
-                    print("   - 🔄 Audio engine will be restarted by resumeRecording()")
                 } else {
-                    print("   - ✅ Audio engine still running from before interruption")
                 }
                 
                 try resumeRecording()
-                AudioStateManager.shared.startRecording()
-                print("   - ✅ Recording resumed successfully")
-                print("   - 📊 Post-resume state: active=\(isRecordingActive), engine=\(audioEngine.isRunning), file=\(audioFile != nil)")
+                _ = AudioStateManager.shared.startRecording()
                 
                 // Verify audio is actually flowing
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                     if let self = self {
-                        print("   - 🔍 Post-resume verification: recording=\(self.isRecordingActive), power=\(self.currentPower)")
                         if self.isRecordingActive && self.currentPower > -160 {
-                            print("   - ✅ Audio is flowing properly after resume")
                         } else if self.isRecordingActive {
-                            print("   - ⚠️ Recording active but no audio power detected - possible microphone issue")
                         } else {
-                            print("   - ❌ Recording not active after resume attempt")
                         }
                     }
                 }
                 
             } catch {
-                print("   - ❌ Failed to resume recording: \(error)")
-                print("   - 🔍 Recording resume error details: \(error.localizedDescription)")
-                print("   - 📊 State during failure: recording URL=\(recordingURL?.lastPathComponent ?? "nil"), audio file=\(audioFile != nil)")
                 resumeSuccessful = false
                 resumeError = error
                 onError?(error)
@@ -1317,14 +1211,11 @@ final class AudioSessionManager: NSObject {
                 self?.onRecordingResumed?()
             }
             
-            print("🟢 Resume attempt complete - all operations restored")
         } else {
             // Handle failed resume attempt
             if currentResumeAttempts < maximumAutoResumeAttempts {
-                print("🔄 Resume failed, will retry in 3 seconds...")
                 scheduleResumeAttempt(delaySeconds: 3.0)
             } else {
-                print("🛑 All resume attempts exhausted - manual intervention required")
                 
                 // Notify UI about failed auto-resume
                 if let error = resumeError {
@@ -1355,54 +1246,41 @@ final class AudioSessionManager: NSObject {
     // MARK: - Background/Foreground Handlers
     
     @objc private func handleAppWillResignActive() {
-        print("🔄 App will resign active - preparing for background")
         // Keep audio session active for background recording
         if isRecordingActive || transcriptionEnabled {
-            print("📱 Maintaining audio session for background recording/transcription")
             try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         }
     }
     
     @objc private func handleAppDidBecomeActive() {
-        print("🔄 App became active - resuming from background")
         // Ensure audio session is still active
         if isRecordingActive || transcriptionEnabled {
-            print("📱 Reactivating audio session from background")
             try? configureAudioSession()
         }
     }
     
     @objc private func handleAppDidEnterBackground() {
-        print("🔄 App entered background")
         if isRecordingActive {
-            print("🎙️ Recording continues in background...")
         }
         if transcriptionEnabled {
-            print("🗣️ Transcription continues in background...")
         }
         
         // Ensure audio session stays active for background recording
         if isRecordingActive || transcriptionEnabled {
             do {
                 try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-                print("✅ Audio session maintained for background operation")
             } catch {
-                print("❌ Failed to maintain audio session in background: \(error)")
                 onError?(error)
             }
         }
     }
     
     @objc private func handleAppWillEnterForeground() {
-        print("🔄 App will enter foreground")
         // Refresh audio session configuration
         if isRecordingActive || transcriptionEnabled {
-            print("📱 Refreshing audio session for foreground")
             do {
                 try configureAudioSession()
-                print("✅ Audio session refreshed for foreground")
             } catch {
-                print("❌ Failed to refresh audio session: \(error)")
                 onError?(error)
             }
         }
@@ -1423,18 +1301,11 @@ extension AudioSessionManager: CXCallObserverDelegate {
         let wasCallActive = isCallActive
         isCallActive = !call.hasEnded
         
-        print("📞 Call state changed:")
-        print("   - Call UUID: \(call.uuid)")
-        print("   - Call active: \(isCallActive)")
-        print("   - Has ended: \(call.hasEnded)")
-        print("   - Previous state: \(wasCallActive)")
         
         // If call just ended and we have pending resume operations
         if wasCallActive && !isCallActive {
-            print("📞 Call ended - checking for pending resume operations")
             
             if wasRecordingBeforeInterruption || wasTranscribingBeforeInterruption {
-                print("📞 Call ended with pending operations - scheduling resume")
                 // Give a moment for the audio session to stabilize after call ends
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                     self?.attemptResume()
@@ -1445,7 +1316,6 @@ extension AudioSessionManager: CXCallObserverDelegate {
         // If call just started while recording/transcribing (edge case)
         if !wasCallActive && isCallActive {
             if isRecordingActive || transcriptionEnabled {
-                print("📞 Call started while audio operations active - triggering interruption handling")
                 handleInterruptionBegan()
             }
         }

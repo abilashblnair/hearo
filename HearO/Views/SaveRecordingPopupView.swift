@@ -2,14 +2,23 @@ import SwiftUI
 
 struct SaveRecordingPopupView: View {
     let duration: TimeInterval
-    let onSave: (String, String?) -> Void
+    let onSave: (String, String?, RecordingFolder?) -> Void
     let onCancel: () -> Void
     
     @State private var title: String = ""
     @State private var notes: String = ""
     @State private var isNotesExpanded: Bool = false
+    @State private var selectedFolder: RecordingFolder?
+    @State private var showingFolderPicker: Bool = false
+    @State private var showingCreateFolder: Bool = false
+    @State private var folders: [RecordingFolder] = []
+    @State private var recentFolders: [RecordingFolder] = []
+    
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isNotesFocused: Bool
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var di: ServiceContainer
+    @StateObject private var settings = SettingsService.shared
     
     private var defaultTitle: String {
         "Session " + Date.now.formatted(date: .abbreviated, time: .shortened)
@@ -73,6 +82,43 @@ struct SaveRecordingPopupView: View {
                             .onSubmit {
                                 isNotesFocused = true
                             }
+                    }
+                    
+                    // Folder selection (only show if folder management is enabled)
+                    if settings.isFolderManagementEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Save to Folder")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            Button(action: { showingFolderPicker = true }) {
+                                HStack(spacing: 12) {
+                                    // Folder icon
+                                    ZStack {
+                                        Circle()
+                                            .fill((selectedFolder?.color ?? .blue).opacity(0.2))
+                                            .frame(width: 32, height: 32)
+                                        
+                                        Image(systemName: selectedFolder?.isDefault == true ? "folder.fill.badge.gearshape" : "folder.fill")
+                                            .font(.body)
+                                            .foregroundColor(selectedFolder?.color ?? .blue)
+                                    }
+                                    
+                                    Text(selectedFolder?.name ?? "Select folder...")
+                                        .foregroundColor(selectedFolder != nil ? .primary : .secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     
                     // Notes section
@@ -154,7 +200,8 @@ struct SaveRecordingPopupView: View {
                     Button("Save") {
                         let finalTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? defaultTitle : title
                         let finalNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onSave(finalTitle, finalNotes)
+                        let finalFolder = settings.isFolderManagementEnabled ? selectedFolder : nil
+                        onSave(finalTitle, finalNotes, finalFolder)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -178,6 +225,26 @@ struct SaveRecordingPopupView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTitleFocused = true
             }
+            if settings.isFolderManagementEnabled {
+                loadFolders()
+            }
+        }
+        .sheet(isPresented: $showingFolderPicker) {
+            if settings.isFolderManagementEnabled {
+                FolderPickerSheet(
+                    folders: folders,
+                    recentFolders: recentFolders,
+                    selectedFolder: $selectedFolder,
+                    showingCreateFolder: $showingCreateFolder
+                )
+            }
+        }
+        .sheet(isPresented: $showingCreateFolder) {
+            if settings.isFolderManagementEnabled {
+                CreateFolderSheet { name, color in
+                    await createFolder(name: name, colorName: color)
+                }
+            }
         }
     }
     
@@ -187,16 +254,153 @@ struct SaveRecordingPopupView: View {
         let seconds = totalSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
+    
+    private func loadFolders() {
+        let folderStore = FolderDataStore(context: modelContext)
+        do {
+            folders = try folderStore.fetchFolders()
+            recentFolders = try folderStore.getRecentFolders()
+            
+            // Auto-select default folder if none selected
+            if selectedFolder == nil {
+                selectedFolder = try folderStore.fetchDefaultFolder()
+            }
+        } catch {
+        }
+    }
+    
+    private func createFolder(name: String, colorName: String) async {
+        let folderStore = FolderDataStore(context: modelContext)
+        do {
+            let newFolder = RecordingFolder(name: name, colorName: colorName)
+            try folderStore.saveFolder(newFolder)
+            loadFolders()
+            selectedFolder = newFolder
+        } catch {
+        }
+    }
+}
+
+// MARK: - Folder Picker Sheet
+
+struct FolderPickerSheet: View {
+    let folders: [RecordingFolder]
+    let recentFolders: [RecordingFolder]
+    @Binding var selectedFolder: RecordingFolder?
+    @Binding var showingCreateFolder: Bool
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                // Recent folders section
+                if !recentFolders.isEmpty {
+                    Section("Recent") {
+                        ForEach(recentFolders) { folder in
+                            FolderPickerRow(
+                                folder: folder,
+                                isSelected: selectedFolder?.id == folder.id
+                            ) {
+                                selectedFolder = folder
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                
+                // All folders section
+                Section("All Folders") {
+                    ForEach(folders) { folder in
+                        FolderPickerRow(
+                            folder: folder,
+                            isSelected: selectedFolder?.id == folder.id
+                        ) {
+                            selectedFolder = folder
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Select Folder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("New Folder") {
+                        showingCreateFolder = true
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+}
+
+struct FolderPickerRow: View {
+    let folder: RecordingFolder
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Folder icon
+                ZStack {
+                    Circle()
+                        .fill(folder.color.opacity(0.2))
+                        .frame(width: 36, height: 36)
+                    
+                    Image(systemName: folder.isDefault ? "folder.fill.badge.gearshape" : "folder.fill")
+                        .font(.title3)
+                        .foregroundColor(folder.color)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(folder.name)
+                            .font(.body)
+                            .fontWeight(isSelected ? .semibold : .regular)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        if folder.isDefault {
+                            Image(systemName: "star.fill")
+                                .font(.caption2)
+                                .foregroundColor(.yellow)
+                        }
+                    }
+                    
+                    Text("\(folder.recordingCount) recordings")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 #Preview {
     SaveRecordingPopupView(
         duration: 125.5,
-        onSave: { title, notes in
-            print("Save: \(title), Notes: \(notes ?? "none")")
+        onSave: { title, notes, folder in
         },
         onCancel: {
-            print("Cancel")
         }
     )
 }
+

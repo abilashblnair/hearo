@@ -450,7 +450,6 @@ struct TranslationSegmentCard: View {
         onSpeak()
 
         guard let targetLanguage = isOriginal ? englishLanguage : selectedLanguage else {
-            print("❌ No target language available for TTS. isOriginal: \(isOriginal), englishLanguage: \(englishLanguage?.name ?? "nil"), selectedLanguage: \(selectedLanguage?.name ?? "nil")")
             return
         }
 
@@ -462,7 +461,6 @@ struct TranslationSegmentCard: View {
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
 
-        print("🗣️ Speaking text: '\(segment.text)' in language: \(targetLanguage.name) (\(targetLanguage.languageCode)) with TTS: \(targetLanguage.googleTTSLanguageCode ?? "fallback") / \(targetLanguage.googleTTSVoice ?? "fallback")")
 
         // Speak with completion callback to properly clear state
         ttsManager.speak(text: segment.text, language: targetLanguage) { success in
@@ -472,9 +470,7 @@ struct TranslationSegmentCard: View {
                 self.onUpdateSpeakingState(nil)
 
                 if success {
-                    print("✅ Successfully spoke text for segment \(segment.id)")
                 } else {
-                    print("❌ Failed to speak text for segment \(segment.id)")
                 }
             }
         }

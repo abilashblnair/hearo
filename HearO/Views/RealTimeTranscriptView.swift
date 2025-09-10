@@ -206,30 +206,25 @@ struct RealTimeTranscriptView: View {
         
         stopRecognition() // Clean any previous tasks
         
-        do {
-            // Create recognition request
-            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-            recognitionRequest?.shouldReportPartialResults = true
-            
-            // Start recognition task
-            recognitionTask = recognizer?.recognitionTask(with: recognitionRequest!) { result, error in
-                DispatchQueue.main.async {
-                    if let result = result {
-                        transcript = result.bestTranscription.formattedString
-                    }
-                    if let error = error {
-                        errorMessage = "Recognition error: \(error.localizedDescription)"
-                        stopRecognition()
-                    }
+        // Create recognition request
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        recognitionRequest?.shouldReportPartialResults = true
+        
+        // Start recognition task
+        recognitionTask = recognizer?.recognitionTask(with: recognitionRequest!) { result, error in
+            DispatchQueue.main.async {
+                if let result = result {
+                    transcript = result.bestTranscription.formattedString
+                }
+                if let error = error {
+                    errorMessage = "Recognition error: \(error.localizedDescription)"
+                    stopRecognition()
                 }
             }
-            
-            isRecording = true
-            transcript.removeAll()
-        } catch {
-            errorMessage = "Failed to start recognition: \(error.localizedDescription)"
-            AudioStateManager.shared.stopStandaloneTranscript()
         }
+        
+        isRecording = true
+        transcript.removeAll()
     }
 
     private func stopRecognition() {

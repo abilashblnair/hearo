@@ -40,6 +40,37 @@ final class AssemblyAITranscriptionServiceImpl: TranscriptionService {
     // MARK: - Private helpers
     private func uploadLocalFile(_ fileURL: URL) async throws -> String {
         let uploadEndpoint = baseURL.appendingPathComponent("upload")
+        
+        
+        // Additional debugging for file access
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let _ = attributes[.size] as? Int64 ?? 0
+            
+            // Test if file is readable
+            let _ = try Data(contentsOf: fileURL)
+        } catch {
+            
+            // Debug: Show what files ARE actually in the audio directory
+            let audioDir = fileURL.deletingLastPathComponent()
+            
+            if FileManager.default.fileExists(atPath: audioDir.path) {
+                do {
+                    let files = try FileManager.default.contentsOfDirectory(at: audioDir, includingPropertiesForKeys: [.fileSizeKey], options: [])
+                    for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                        let _ = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    }
+                } catch {
+                }
+            } else {
+                
+                // Check if Documents directory exists
+                let _ = audioDir.deletingLastPathComponent()
+            }
+            
+            throw error
+        }
+        
         var req = URLRequest(url: uploadEndpoint)
         req.httpMethod = "POST"
         req.setValue(apiKey, forHTTPHeaderField: "authorization")

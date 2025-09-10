@@ -30,6 +30,8 @@ struct HomeView: View {
 
 struct RecordTab: View {
     @Binding var showRecordingSheet: Bool
+    @EnvironmentObject var di: ServiceContainer
+    @StateObject private var settings = SettingsService.shared
     
     // Navigation state for transcript viewing
     @State private var navigateToTranscript: Bool = false
@@ -45,25 +47,44 @@ struct RecordTab: View {
                         HStack {
                             Spacer()
                             
-                            RecordListView(
-                                showRecordingSheet: $showRecordingSheet,
-                                navigateToTranscript: $navigateToTranscript,
-                                currentTranscriptSession: $currentTranscriptSession,
-                                currentTranscriptRecording: $currentTranscriptRecording
-                            )
-                            .frame(maxWidth: min(geometry.size.width * 0.85, 1000))
+                            if settings.isFolderManagementEnabled {
+                                FoldersListView(
+                                    showRecordingSheet: $showRecordingSheet,
+                                    navigateToTranscript: $navigateToTranscript,
+                                    currentTranscriptSession: $currentTranscriptSession,
+                                    currentTranscriptRecording: $currentTranscriptRecording
+                                )
+                                .frame(maxWidth: min(geometry.size.width * 0.85, 1000))
+                            } else {
+                                RecordListView(
+                                    showRecordingSheet: $showRecordingSheet,
+                                    navigateToTranscript: $navigateToTranscript,
+                                    currentTranscriptSession: $currentTranscriptSession,
+                                    currentTranscriptRecording: $currentTranscriptRecording
+                                )
+                                .frame(maxWidth: min(geometry.size.width * 0.85, 1000))
+                            }
                             
                             Spacer()
                         }
                     }
                 } else {
                     // iPhone layout
-                    RecordListView(
-                        showRecordingSheet: $showRecordingSheet,
-                        navigateToTranscript: $navigateToTranscript,
-                        currentTranscriptSession: $currentTranscriptSession,
-                        currentTranscriptRecording: $currentTranscriptRecording
-                    )
+                    if settings.isFolderManagementEnabled {
+                        FoldersListView(
+                            showRecordingSheet: $showRecordingSheet,
+                            navigateToTranscript: $navigateToTranscript,
+                            currentTranscriptSession: $currentTranscriptSession,
+                            currentTranscriptRecording: $currentTranscriptRecording
+                        )
+                    } else {
+                        RecordListView(
+                            showRecordingSheet: $showRecordingSheet,
+                            navigateToTranscript: $navigateToTranscript,
+                            currentTranscriptSession: $currentTranscriptSession,
+                            currentTranscriptRecording: $currentTranscriptRecording
+                        )
+                    }
                 }
             }
             .navigationTitle("Record")

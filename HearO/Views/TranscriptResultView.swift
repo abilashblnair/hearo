@@ -420,14 +420,12 @@ struct TranscriptResultView: View {
                             return currentValue
                         },
                         set: { newValue in
-                            print("🎯 TranscriptView Slider value changed: \(newValue)")
                             isSeeking = true
                             seekTime = newValue
                         }
                     ),
                     in: 0...actualDurationForProgress,
                     onEditingChanged: { isEditing in
-                        print("🎯 TranscriptView Slider editing changed: \(isEditing)")
                         if isEditing {
                             // User started seeking
                             isSeeking = true
@@ -568,7 +566,6 @@ struct TranscriptResultView: View {
         
         // Check cached summary first (Recording cache -> Session -> Generated)
         if let cachedSummary = recording?.getCachedSummary(), !forceRegenerateSummary {
-            print("📋 Using cached summary from Recording")
             generatedSummary = cachedSummary
             navigateToSummary = true
         } else if let existingSummary = session.summary ?? generatedSummary {
@@ -599,7 +596,6 @@ struct TranscriptResultView: View {
         generateHapticFeedback(.light)
         
         do {
-            print("🌐 Generating new summary from API")
             let summary = try await di.summarization.summarize(segments: segments, locale: session.languageCode, title: session.title, notes: recording?.notes)
             
             generatedSummary = summary
@@ -608,7 +604,6 @@ struct TranscriptResultView: View {
             if let recording = recording {
                 recording.cacheSummary(summary, language: session.languageCode)
                 try? modelContext.save()
-                print("💾 Cached summary in Recording")
             }
             
             // Reset force regenerate flag
@@ -619,7 +614,6 @@ struct TranscriptResultView: View {
         } catch {
             // Check if it's a URL cancellation error
             if let urlError = error as? URLError, urlError.code == .cancelled {
-                print("⚠️ Network request was cancelled")
                 showError("Request was cancelled. Please try again.")
             } else {
                 showError("Failed to generate summary: \(error.localizedDescription)")
@@ -706,7 +700,6 @@ struct TranscriptResultView: View {
     @MainActor
     private func translateTranscriptForLanguageChange(to targetLanguage: String) async -> [TranscriptSegment]? {
         guard let segments = session.transcript, !segments.isEmpty else {
-            print("❌ No transcript available to translate")
             return nil
         }
         
@@ -716,13 +709,10 @@ struct TranscriptResultView: View {
             // Update the stored translation for this view
             translatedTranscript = translated
             
-            print("✅ Language change translation completed for: \(targetLanguage)")
             return translated
         } catch {
             if let urlError = error as? URLError, urlError.code == .timedOut {
-                print("❌ Translation timed out for language change: \(targetLanguage)")
             } else {
-                print("❌ Failed to translate for language change: \(error.localizedDescription)")
             }
             return nil
         }
@@ -730,7 +720,6 @@ struct TranscriptResultView: View {
     
     @MainActor
     private func handleChangeLanguageRequestFromTranslation() {
-        print("🔄 Change language requested from TranslationView - opening language selection")
         
         // Ensure we're back to this view
         navigateToTranslation = false
@@ -762,12 +751,10 @@ struct TranscriptResultView: View {
     
     private func seekToTime(_ time: TimeInterval) {
         guard let player = audioPlayer else { 
-            print("❌ seekToTime: No audio player available")
             return 
         }
         
         let clampedTime = max(0, min(time, player.duration))
-        print("🎯 Seeking to time: \(clampedTime) (requested: \(time), duration: \(player.duration))")
         
         player.currentTime = clampedTime
         playbackTime = clampedTime
@@ -792,7 +779,6 @@ struct TranscriptResultView: View {
                 }
             }
         } catch {
-            print("Failed to setup audio player: \(error)")
         }
     }
     
@@ -808,7 +794,6 @@ struct TranscriptResultView: View {
                 isPlaying = true
             }
         } catch {
-            print("Failed to play audio: \(error)")
         }
     }
     
@@ -841,7 +826,6 @@ struct TranscriptResultView: View {
         forceRegenerateSummary = true
         generatedSummary = nil
         
-        print("🔄 Pull-to-refresh: Regenerating summary")
         
         // Create an independent task for summary generation to avoid cancellation
         // when pull-to-refresh gesture completes
@@ -869,7 +853,6 @@ struct TranscriptResultView: View {
         }
         
         do {
-            print("🌐 Generating new summary from API (detached task)")
             let summary = try await di.summarization.summarize(segments: segments, locale: locale, title: session.title, notes: recording?.notes)
             
             await MainActor.run {
@@ -879,7 +862,6 @@ struct TranscriptResultView: View {
                 if let recording = recording {
                     recording.cacheSummary(summary, language: locale)
                     try? modelContext.save()
-                    print("💾 Cached summary in Recording")
                 }
                 
                 // Reset force regenerate flag
@@ -893,7 +875,6 @@ struct TranscriptResultView: View {
             await MainActor.run {
                 // Check if it's a URL cancellation error
                 if let urlError = error as? URLError, urlError.code == .cancelled {
-                    print("⚠️ Network request was cancelled")
                     showError("Request was cancelled. Please try again.")
                 } else {
                     showError("Failed to generate summary: \(error.localizedDescription)")

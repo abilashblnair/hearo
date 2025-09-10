@@ -22,14 +22,12 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("GoogleCloudTTSManager: Failed to setup audio session - \(error)")
         }
     }
     
     // Speak with Language object
     func speak(text: String, language: Language, completion: ((Bool) -> Void)? = nil) {
         guard !text.isEmpty else {
-            print("🔇 GoogleCloudTTSManager: Empty text provided")
             completion?(false)
             return
         }
@@ -37,7 +35,6 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
         let languageCode = language.googleTTSLanguageCode ?? getDefaultLanguageCode(for: language)
         let voiceCode = language.googleTTSVoice ?? getDefaultVoice(for: language)
         
-        print("🎙️ GoogleCloudTTSManager: Using language code: \(languageCode), voice: \(voiceCode) for language: \(language.name)")
         
         speak(text: text, languageCode: languageCode, voice: voiceCode, completion: completion)
     }
@@ -217,7 +214,6 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         } catch {
-            print("GoogleCloudTTSManager: Failed to encode request - \(error)")
             DispatchQueue.main.async {
                 completion?(false)
             }
@@ -235,8 +231,7 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
                 self.isSpeaking = false
             }
             
-            if let error = error {
-                print("GoogleCloudTTSManager: Network error - \(error)")
+            if error != nil {
                 DispatchQueue.main.async {
                     completion?(false)
                 }
@@ -244,7 +239,6 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
             }
             
             guard let data = data else {
-                print("GoogleCloudTTSManager: No data received")
                 DispatchQueue.main.async {
                     completion?(false)
                 }
@@ -263,19 +257,16 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
                         completion?(true)
                     }
                 } else if let error = json?["error"] as? [String: Any],
-                         let message = error["message"] as? String {
-                    print("GoogleCloudTTSManager: API error - \(message)")
+                         let _ = error["message"] as? String {
                     DispatchQueue.main.async {
                         completion?(false)
                     }
                 } else {
-                    print("GoogleCloudTTSManager: Invalid response format")
                     DispatchQueue.main.async {
                         completion?(false)
                     }
                 }
             } catch {
-                print("GoogleCloudTTSManager: Failed to parse response - \(error)")
                 DispatchQueue.main.async {
                     completion?(false)
                 }
@@ -292,7 +283,6 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
             audioPlayer?.play()
             isPlaying = true
         } catch {
-            print("GoogleCloudTTSManager: Failed to play audio - \(error)")
             isPlaying = false
         }
     }
@@ -325,8 +315,7 @@ extension GoogleCloudTTSManager: AVAudioPlayerDelegate {
         DispatchQueue.main.async {
             self.isPlaying = false
         }
-        if let error = error {
-            print("GoogleCloudTTSManager: Audio decode error - \(error)")
+                if error != nil {
         }
     }
 }

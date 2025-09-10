@@ -87,12 +87,10 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
     }
     
     func disableTranscription() {
-        print("🔇 UnifiedAudioRecordingServiceImpl: Disabling transcription...")
         audioSessionManager.stopTranscription()
     }
     
     func forceRestartSpeechRecognition() {
-        print("🔄 UnifiedAudioRecordingServiceImpl: Force restarting speech recognition...")
         audioSessionManager.forceRestartSpeechRecognition()
     }
     

@@ -13,6 +13,9 @@ final class Recording: Identifiable {
     // User notes field
     var notes: String?
     
+    // Folder relationship
+    @Relationship var folder: RecordingFolder?
+    
     // Transcript caching fields
     var transcriptText: String?
     var transcriptSegmentsData: Data? // JSON encoded TranscriptSegment array
@@ -24,13 +27,14 @@ final class Recording: Identifiable {
     var summaryCreatedAt: Date?
     var summaryLanguage: String?
 
-    init(id: UUID = UUID(), title: String, createdAt: Date = Date(), audioURL: String, duration: TimeInterval, notes: String? = nil) {
+    init(id: UUID = UUID(), title: String, createdAt: Date = Date(), audioURL: String, duration: TimeInterval, notes: String? = nil, folder: RecordingFolder? = nil) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
         self.audioURL = audioURL
         self.duration = duration
         self.notes = notes
+        self.folder = folder
         self.transcriptText = nil
         self.transcriptSegmentsData = nil
         self.transcriptLanguage = nil
@@ -41,22 +45,43 @@ final class Recording: Identifiable {
     }
 
     func finalAudioURL() -> URL {
-        // Build candidate from stored value
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        // Use consistent Documents directory resolution
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("audio/\(id.uuidString).m4a")
+        }
+        
         var candidate: URL
         if let url = URL(string: audioURL), url.scheme == "file" { // file:// absolute
             candidate = url
         } else if audioURL.hasPrefix("/") { // absolute path
             candidate = URL(fileURLWithPath: audioURL)
         } else { // relative path under Documents
-            candidate = (docs ?? URL(fileURLWithPath: NSTemporaryDirectory())).appendingPathComponent(audioURL)
+            candidate = docs.appendingPathComponent(audioURL)
         }
+        
+        
         // If candidate exists, return it
         if FileManager.default.fileExists(atPath: candidate.path) {
             return candidate
         }
+        
         // Fallback: reconstruct from known scheme audio/<id>.m4a under Documents
-        let fallback = (docs ?? URL(fileURLWithPath: NSTemporaryDirectory())).appendingPathComponent("audio/\(id.uuidString).m4a")
+        let fallback = docs.appendingPathComponent("audio/\(id.uuidString).m4a")
+        
+        // If fallback doesn't exist either, try to recover by searching for any file with this Recording's title
+        if !FileManager.default.fileExists(atPath: fallback.path) {
+            let audioDir = docs.appendingPathComponent("audio")
+            
+            if let files = try? FileManager.default.contentsOfDirectory(at: audioDir, includingPropertiesForKeys: nil) {
+                for _ in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                }
+                
+                // TODO: In the future, we could implement smart recovery by finding files
+                // that match this Recording's creation date, size, or other metadata
+            } else {
+            }
+        }
+        
         return fallback
     }
     

@@ -109,7 +109,6 @@ final class AVAudioRecordingServiceImpl: NSObject, AudioRecordingService, AVAudi
             let session = AVAudioSession.sharedInstance()
             try session.setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Session deactivation error: \(error)")
         }
     }
 
@@ -123,7 +122,6 @@ final class AVAudioRecordingServiceImpl: NSObject, AudioRecordingService, AVAudi
         get { nil }
         set { 
             if newValue != nil {
-                print("⚠️ Transcription callbacks not supported in AVAudioRecordingServiceImpl")
             }
         }
     }
@@ -132,8 +130,6 @@ final class AVAudioRecordingServiceImpl: NSObject, AudioRecordingService, AVAudi
     
     /// Manual resume not supported in legacy service - use UnifiedAudioRecordingServiceImpl for full functionality
     func manualResumeAfterInterruption() {
-        print("⚠️ Manual resume after interruption not supported in AVAudioRecordingServiceImpl")
-        print("💡 Use UnifiedAudioRecordingServiceImpl for advanced interruption handling")
     }
     
     /// Pending resume operations not tracked in legacy service
@@ -145,20 +141,16 @@ final class AVAudioRecordingServiceImpl: NSObject, AudioRecordingService, AVAudi
     
     // Optional: handle interruptions
     func audioRecorderBeginInterruption(_ recorder: AVAudioRecorder) {
-        print("🔴 AVAudioRecorder interruption began")
         stopMetering()
         isRecording = false
     }
     
     func audioRecorderEndInterruption(_ recorder: AVAudioRecorder, withOptions flags: Int) {
-        print("🟢 AVAudioRecorder interruption ended with options: \(flags)")
         // Basic resume logic for AVAudioRecorder
         if flags == 1 { // AVAudioSessionInterruptionOptions.shouldResume
             do {
                 try resumeRecording()
-                print("✅ Recording resumed after interruption")
             } catch {
-                print("❌ Failed to resume recording after interruption: \(error)")
             }
         }
     }

@@ -56,32 +56,26 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
     func translate(segments: [TranscriptSegment], targetLanguage: String) async throws -> [TranscriptSegment] {
         guard !segments.isEmpty else { return segments }
         
-        print("🌍 Starting translation to \(targetLanguage) for \(segments.count) segments")
         
         // Debug: Print first few segments to understand input
-        for (index, segment) in segments.prefix(3).enumerated() {
-            print("📝 Input segment \(index + 1): '\(segment.text.prefix(50))...' (\(segment.text.count) chars)")
+        for (_, _) in segments.prefix(3).enumerated() {
         }
         
         // Use character-based chunking for translation to ensure manageable request sizes
         let chunks = chunkSegmentsForTranslation(segments)
         var translatedSegments: [TranscriptSegment] = []
         
-        print("📦 Created \(chunks.count) character-based chunks for translation")
         
         // Debug chunking
-        for (index, chunk) in chunks.enumerated() {
-            let totalChars = chunk.reduce(0) { $0 + $1.text.count }
-            print("📦 Chunk \(index + 1): \(chunk.count) segments, \(totalChars) total characters")
+        for (_, chunk) in chunks.enumerated() {
+            let _ = chunk.reduce(0) { $0 + $1.text.count }
         }
         
         for (index, chunk) in chunks.enumerated() {
-            print("🔄 Translating chunk \(index + 1)/\(chunks.count) with \(chunk.count) segments")
             
             let translated = try await translateChunkWithRetry(chunk, targetLanguage: targetLanguage)
             translatedSegments.append(contentsOf: translated)
             
-            print("✅ Completed chunk \(index + 1)/\(chunks.count)")
             
             // Add small delay between chunks to avoid rate limiting
             if index < chunks.count - 1 {
@@ -89,7 +83,6 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             }
         }
         
-        print("🎉 Translation completed: \(translatedSegments.count) segments")
         return translatedSegments
     }
     
@@ -106,28 +99,23 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         
         for attempt in 1...maxRetries {
             do {
-                print("🔄 Summary attempt \(attempt)/\(maxRetries) for chunk with \(segments.count) segments")
                 return try await summarizeChunk(segments, locale: locale, title: title, notes: notes)
             } catch {
                 lastError = error
-                print("❌ Summary attempt \(attempt) failed: \(error.localizedDescription)")
                 
                 // If it's a network cancellation, don't retry
                 if let urlError = error as? URLError, urlError.code == .cancelled {
-                    print("🚫 Network request was cancelled, not retrying")
                     throw error
                 }
                 
                 // For other errors, retry with backoff
                 if attempt < maxRetries {
                     let delay = Double(attempt) * 1.0 // 1s, 2s, 3s backoff
-                    print("⏳ Retrying in \(delay) seconds...")
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
             }
         }
         
-        print("💥 All \(maxRetries) summary attempts failed")
         throw lastError ?? SummarizationError.apiError(408, "Summary generation failed after \(maxRetries) attempts")
     }
     
@@ -149,11 +137,9 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             user: userPrompt
         )
         
-        print("📥 Received translation response with \(response.segments.count) segments for \(segments.count) input segments")
         
         // Ensure we have the same number of segments in response as input
         guard response.segments.count == segments.count else {
-            print("⚠️ Segment count mismatch: input=\(segments.count), response=\(response.segments.count)")
             // Fallback: use minimum count to avoid crashes
             let minCount = min(segments.count, response.segments.count)
             let responseSegments = Array(response.segments.prefix(minCount))
@@ -186,24 +172,20 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         
         for attempt in 1...maxRetries {
             do {
-                print("🔄 Translation attempt \(attempt)/\(maxRetries) for chunk with \(segments.count) segments")
                 return try await translateChunk(segments, targetLanguage: targetLanguage)
             } catch {
                 lastError = error
-                print("❌ Translation attempt \(attempt) failed: \(error.localizedDescription)")
                 
                 // Check if it's a timeout error
                 if let urlError = error as? URLError, urlError.code == .timedOut {
                     if attempt < maxRetries {
                         let delay = Double(attempt) * 1.5 // Faster backoff: 1.5s, 3s, 4.5s
-                        print("⏳ Retrying in \(delay) seconds...")
                         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                         continue
                     }
                     
                     // If all retries failed due to timeout, try ultra-small chunking as last resort
                     if attempt == maxRetries {
-                        print("🚨 All retries failed, attempting ultra-small chunk fallback...")
                         return try await translateWithUltraSmallChunks(segments, targetLanguage: targetLanguage)
                     }
                 }
@@ -215,16 +197,13 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             }
         }
         
-        print("💥 All \(maxRetries) translation attempts failed")
         throw lastError ?? SummarizationError.apiError(408, "Translation failed after \(maxRetries) attempts")
     }
     
     private func translateWithUltraSmallChunks(_ segments: [TranscriptSegment], targetLanguage: String) async throws -> [TranscriptSegment] {
-        print("⚡ Using ultra-small chunk fallback (1 segment per request)")
         var translatedSegments: [TranscriptSegment] = []
         
         for (index, segment) in segments.enumerated() {
-            print("🔄 Translating individual segment \(index + 1)/\(segments.count)")
             
             do {
                 let translated = try await translateChunk([segment], targetLanguage: targetLanguage)
@@ -235,7 +214,6 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
                     try await Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay
                 }
             } catch {
-                print("❌ Failed to translate individual segment, using original text")
                 // Fallback: keep original text if translation fails
                 translatedSegments.append(segment)
             }
@@ -282,9 +260,6 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
             throw SummarizationError.apiError(401, "OpenAI API key is missing. Please check your configuration.")
         }
         
-        print("🔑 Using OpenAI API key: \(String(apiKey.prefix(10)))...")
-        print("🤖 Model: \(model)")
-        print("📝 Request size: \(user.count) characters")
         
         let request = OpenAIRequest(
             model: model,
@@ -302,19 +277,15 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(request)
         
-        print("🚀 Sending API request...")
         let (data, response) = try await urlSession.data(for: urlRequest)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw SummarizationError.invalidResponse
         }
         
-        print("📡 API Response Status: \(httpResponse.statusCode)")
-        print("📊 Response Data Size: \(data.count) bytes")
         
         guard httpResponse.statusCode == 200 else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("❌ API Error (\(httpResponse.statusCode)): \(errorMessage)")
             throw SummarizationError.apiError(httpResponse.statusCode, errorMessage)
         }
         
@@ -326,15 +297,9 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         }
         
         do {
-            print("✅ API request successful, decoding response...")
-            print("🔍 Attempting to decode as \(T.self)")
             
             return try JSONDecoder().decode(T.self, from: jsonData)
         } catch {
-            print("❌ JSON Decoding Error:")
-            print("Error: \(error)")
-            print("Raw content: \(content)")
-            print("JSON Data: \(String(data: jsonData, encoding: .utf8) ?? "nil")")
             
             throw SummarizationError.decodingError("Failed to decode \(T.self): \(error.localizedDescription). Raw content: \(content)")
         }
@@ -391,7 +356,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         
         """
         
-        if let notes = notes {
+        if notes != nil {
             prompt += "7) Consider the user notes when prioritizing important content\n"
         }
         
@@ -402,8 +367,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
     
     private func buildTranslationPrompt(segments: [TranscriptSegment], targetLanguage: String) -> String {
         // Estimate prompt size to avoid overly large requests
-        let estimatedSize = segments.reduce(0) { $0 + $1.text.count }
-        print("📊 Translation chunk estimated text size: \(estimatedSize) characters")
+        let _ = segments.reduce(0) { $0 + $1.text.count }
         
         let segmentArray = segments.map { segment in
             [
@@ -551,10 +515,8 @@ private extension GPTSummarizationServiceImpl {
             chunks.append(currentChunk)
         }
         
-        print("📊 Character-based chunking: \(segments.count) segments → \(chunks.count) chunks")
-        for (index, chunk) in chunks.enumerated() {
-            let charCount = chunk.reduce(0) { $0 + $1.text.count }
-            print("  Chunk \(index + 1): \(chunk.count) segments, \(charCount) chars")
+        for (_, chunk) in chunks.enumerated() {
+            let _ = chunk.reduce(0) { $0 + $1.text.count }
         }
         
         return chunks
@@ -618,7 +580,6 @@ private extension GPTSummarizationServiceImpl {
             }
         }
         
-        print("🔪 Split large segment (\(text.count) chars) into \(segments.count) parts")
         return segments.isEmpty ? [segment] : segments
     }
 }

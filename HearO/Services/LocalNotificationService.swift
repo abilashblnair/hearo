@@ -30,10 +30,8 @@ class LocalNotificationService: NSObject, ObservableObject {
             let granted = try await notificationCenter.requestAuthorization(
                 options: [.alert, .sound, .badge, .providesAppNotificationSettings]
             )
-            print("📱 Notification permissions granted: \(granted)")
             return granted
         } catch {
-            print("❌ Failed to request notification permissions: \(error)")
             return false
         }
     }
@@ -100,7 +98,6 @@ class LocalNotificationService: NSObject, ObservableObject {
         do {
             try await notificationCenter.add(request)
         } catch {
-            print("❌ Failed to show recording notification: \(error)")
         }
     }
     
@@ -120,7 +117,6 @@ class LocalNotificationService: NSObject, ObservableObject {
         do {
             try await notificationCenter.add(request)
         } catch {
-            print("❌ Failed to show recording complete notification: \(error)")
         }
     }
     
@@ -183,7 +179,6 @@ class LocalNotificationService: NSObject, ObservableObject {
         do {
             try await notificationCenter.add(request)
         } catch {
-            print("❌ Failed to show playback notification: \(error)")
         }
     }
     
@@ -257,7 +252,6 @@ class LocalNotificationService: NSObject, ObservableObject {
             try data.write(to: tempURL)
             return try UNNotificationAttachment(identifier: "progress", url: tempURL)
         } catch {
-            print("❌ Failed to create notification attachment: \(error)")
             return nil
         }
     }
@@ -410,5 +404,8 @@ extension Notification.Name {
     static let pausePlaybackFromNotification = Notification.Name("pausePlaybackFromNotification")
     static let stopPlaybackFromNotification = Notification.Name("stopPlaybackFromNotification")
 }
+
+
+
 
 
