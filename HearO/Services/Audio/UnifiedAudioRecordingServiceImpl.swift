@@ -71,7 +71,13 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
     }
     
     func deactivateSessionIfNeeded() {
+        // Don't deactivate if recording is active
         guard !isRecording else { return }
+        
+        // Don't deactivate if there's a paused recording session that can be resumed
+        guard !audioSessionManager.isSessionActive else { return }
+        
+        // Only deactivate if there's truly no active session
         audioSessionManager.deactivateSession()
     }
     
@@ -84,6 +90,11 @@ final class UnifiedAudioRecordingServiceImpl: AudioRecordingService {
     func enableTranscription() async throws {
         try await audioSessionManager.requestSpeechPermission()
         try audioSessionManager.startTranscription()
+    }
+    
+    func enableTranscriptionDuringRecording() async throws {
+        try await audioSessionManager.requestSpeechPermission()
+        try audioSessionManager.enableTranscriptionDuringRecording()
     }
     
     func disableTranscription() {

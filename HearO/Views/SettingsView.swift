@@ -4,16 +4,52 @@ import WebKit
 struct SettingsView: View {
     @EnvironmentObject var di: ServiceContainer
     @StateObject private var settings = SettingsService.shared
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
+    
+    // MARK: - Navigation State
+    @State private var navigateToGeneral = false
+    
+    // MARK: - Paywall State
+    @State private var showPaywall = false
+    
+    // MARK: - Restore State
+    @State private var isRestoring = false
+    @State private var showRestoreAlert = false
+    @State private var restoreMessage = ""
+    @State private var restoreSuccess = false
 
     var body: some View {
         NavigationView {
             List {
+                // Premium status section
+                Section(header: Text("Account")) {
+                    premiumStatusSection
+                    
+                    // Restore purchases option
+                    if !di.subscription.isPremium {
+                        restorePurchasesSection
+                    }
+                }
+                
+                
                 // Quick toggle for folder management with immediate effect
                 Section(header: Text("Quick Settings")) {
                     HStack {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Folder Management")
+                                HStack {
+                                    Text("Folder Management")
+                                    if !di.subscription.isPremium {
+                                        Text("PREMIUM")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange)
+                                            .cornerRadius(4)
+                                    }
+                                }
                                 Text("Organize recordings in folders")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
@@ -25,8 +61,9 @@ struct SettingsView: View {
                         
                         Spacer()
                         
-                        Toggle("", isOn: $settings.isFolderManagementEnabled)
+                        Toggle("", isOn: folderManagementBinding)
                             .labelsHidden()
+                            .disabled(!di.subscription.isPremium && !settings.isFolderManagementEnabled)
                     }
                 }
                 
@@ -45,17 +82,20 @@ struct SettingsView: View {
                         }
                     }
                     
-                    NavigationLink(destination: RecordingManagementView()) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Storage & Files")
-                                Text("Manage recordings and folders")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                    // Only show Storage & Files when folder management is enabled
+                    if settings.isFolderManagementEnabled {
+                        NavigationLink(destination: RecordingManagementView()) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Storage & Files")
+                                    Text("Manage recordings and folders")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "externaldrive.fill")
+                                    .foregroundColor(.green)
                             }
-                        } icon: {
-                            Image(systemName: "externaldrive.fill")
-                                .foregroundColor(.green)
                         }
                     }
                     
@@ -77,6 +117,196 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
+        .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
+            SubscriptionSuccessView()
+                .environmentObject(subscriptionManager)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToLiveTranscriptionSettings)) { _ in
+            navigateToGeneral = true
+        }
+        .navigationDestination(isPresented: $navigateToGeneral) {
+            GeneralSettingsView()
+        }
+        .alert("Restore Purchases", isPresented: $showRestoreAlert) {
+            Button("OK") { }
+        } message: {
+            Text(restoreMessage)
+        }
+    }
+    
+    // MARK: - Premium Status Section
+    
+    @ViewBuilder
+    private var premiumStatusSection: some View {
+        HStack {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(di.subscription.isPremium ? "Premium" : "Free Plan")
+                        .fontWeight(di.subscription.isPremium ? .semibold : .regular)
+                    
+                    if di.subscription.isPremium {
+                        if let profile = di.subscription.profile,
+                           let accessLevel = profile.accessLevels["premium"],
+                           let expiresAt = accessLevel.expiresAt {
+                            Text("Expires \(expiresAt, style: .date)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Active subscription")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Text("Upgrade to unlock premium features")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } icon: {
+                Image(systemName: di.subscription.isPremium ? "crown.fill" : "crown")
+                    .foregroundColor(di.subscription.isPremium ? .orange : .gray)
+            }
+            
+            Spacer()
+            
+            // Refresh button (always visible for testing/troubleshooting)
+            Button(action: {
+                Task {
+                    await refreshSubscriptionStatus()
+                }
+            }) {
+                Image(systemName: di.subscription.isLoading ? "arrow.clockwise" : "arrow.clockwise.circle")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .rotationEffect(.degrees(di.subscription.isLoading ? 360 : 0))
+                    .animation(di.subscription.isLoading ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: di.subscription.isLoading)
+            }
+            .disabled(di.subscription.isLoading)
+            
+            if !di.subscription.isPremium {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !di.subscription.isPremium {
+                showPaywall = true
+            }
+        }
+    }
+    
+    // MARK: - Restore Purchases Section
+    
+    @ViewBuilder
+    private var restorePurchasesSection: some View {
+        Button(action: {
+            Task {
+                await restorePurchases()
+            }
+        }) {
+            HStack {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Restore Purchases")
+                        Text("If you previously purchased premium, tap here to restore your subscription")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .foregroundColor(isRestoring ? .gray : .blue)
+                }
+                
+                Spacer()
+                
+                if isRestoring {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .disabled(isRestoring)
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var folderManagementBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { 
+                // If premium, return actual setting value
+                // If not premium, return false (disabled)
+                di.subscription.isPremium ? settings.isFolderManagementEnabled : false
+            },
+            set: { newValue in
+                // Check if user can manage folders
+                let canManage = di.featureManager.canManageFolders()
+                if canManage.allowed {
+                    settings.isFolderManagementEnabled = newValue
+                } else {
+                    // Show paywall for non-premium users
+                    showPaywall = true
+                }
+            }
+        )
+    }
+    
+    // MARK: - Private Methods
+    
+    private func refreshSubscriptionStatus() async {
+        print("🔄 Manual subscription status refresh requested")
+        await subscriptionManager.forceRefreshSubscriptionStatus()
+    }
+    
+    @MainActor
+    private func restorePurchases() async {
+        isRestoring = true
+        
+        let result = await subscriptionManager.restorePurchases()
+        
+        switch result {
+        case .success(let profile):
+            if profile.accessLevels["premium"]?.isActive == true {
+                restoreMessage = "✅ Great! Your premium subscription has been successfully restored."
+                restoreSuccess = true
+                
+                // Automatically enable folder management for restored premium users
+                print("📁 SettingsView: Enabling folder management for restored premium user")
+                settings.isFolderManagementEnabled = true
+                
+                // Show success feedback
+                await subscriptionManager.forceRefreshSubscriptionStatus()
+                
+                // Add haptic feedback
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+                
+            } else {
+                restoreMessage = "No active premium subscription was found to restore. If you believe this is an error, please contact support."
+                restoreSuccess = false
+                
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.warning)
+            }
+            
+        case .failure(let error):
+            print("❌ SettingsView: Restore failed: \(error)")
+            restoreMessage = "Failed to restore purchases: \(error.localizedDescription)\n\nPlease try again or contact support if the problem persists."
+            restoreSuccess = false
+            
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.error)
+        }
+        
+        isRestoring = false
+        showRestoreAlert = true
     }
 }
 
@@ -85,120 +315,220 @@ struct RecordingManagementView: View {
     @EnvironmentObject var di: ServiceContainer
     @Environment(\.modelContext) private var modelContext
     @StateObject private var settings = SettingsService.shared
+    @StateObject private var storageManager = StorageManager.shared
     
-    @State private var folders: [RecordingFolder] = []
-    @State private var allRecordings: [Recording] = []
-    @State private var storageUsed: String = "Calculating..."
+    // MARK: - Storage State
+    @State private var storageStats: StorageStats?
+    @State private var showingClearDataAlert = false
+    @State private var showingSecondaryConfirmation = false
+    @State private var confirmationText = ""
+    @State private var alertMessage = ""
+    @State private var showingAlert = false
     
     var body: some View {
         List {
+            // Enhanced Storage Information Section
             Section(header: Text("Storage Information")) {
-                HStack {
-                    Label("Storage Used", systemImage: "externaldrive")
-                    Spacer()
-                    Text(storageUsed)
-                        .foregroundColor(.secondary)
-                }
-                
-                HStack {
-                    Label("Total Recordings", systemImage: "waveform")
-                    Spacer()
-                    Text("\(allRecordings.count)")
-                        .foregroundColor(.secondary)
-                }
-                
-                if settings.isFolderManagementEnabled {
+                if let stats = storageStats {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Label("Total Recordings", systemImage: "waveform")
+                            Spacer()
+                            Text("\(stats.totalRecordings)")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        HStack {
+                            Label("Storage Used", systemImage: "externaldrive")
+                            Spacer()
+                            Text(stats.formattedFileSize)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        HStack {
+                            Label("Total Duration", systemImage: "clock")
+                            Spacer()
+                            Text(stats.formattedDuration)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if settings.isFolderManagementEnabled {
+                            HStack {
+                                Label("Folders", systemImage: "folder")
+                                Spacer()
+                                Text("\(stats.totalFolders)")
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            if stats.emptyFolders > 0 {
+                                HStack {
+                                    Label("Empty Folders", systemImage: "folder.badge.minus")
+                                    Spacer()
+                                    Text("\(stats.emptyFolders)")
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
+                    }
+                } else {
                     HStack {
-                        Label("Folders", systemImage: "folder")
+                        Label("Loading...", systemImage: "externaldrive")
                         Spacer()
-                        Text("\(folders.count)")
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                
+                // Refresh button
+                Button(action: loadStorageStats) {
+                    Label("Refresh Statistics", systemImage: "arrow.clockwise")
+                }
+                .disabled(storageManager.isProcessing)
+            }
+            
+            // Folder Actions Section
+            if settings.isFolderManagementEnabled {
+                Section(header: Text("Folder Management")) {
+                    Button(action: cleanEmptyFolders) {
+                        HStack {
+                            Label("Clean Empty Folders", systemImage: "folder.badge.minus")
+                                .foregroundColor(storageManager.isProcessing ? .gray : .orange)
+                            
+                            if storageManager.isProcessing && storageManager.operationStatus.contains("folder") {
+                                Spacer()
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
+                    .disabled(storageManager.isProcessing)
+                    
+                    if let stats = storageStats, stats.emptyFolders > 0 {
+                        Text("\(stats.emptyFolders) empty folder\(stats.emptyFolders == 1 ? "" : "s") can be cleaned")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             }
             
-            if settings.isFolderManagementEnabled {
-                Section(header: Text("Folder Actions")) {
-                    Button(action: cleanupEmptyFolders) {
-                        Label("Clean Empty Folders", systemImage: "trash")
-                            .foregroundColor(.orange)
+            // Data Management Section
+            Section(header: Text("Data Management")) {
+                Button(action: showClearDataConfirmation) {
+                    HStack {
+                        Label("Clear All Data", systemImage: "trash.fill")
+                            .foregroundColor(storageManager.isProcessing ? .gray : .red)
+                        
+                        if storageManager.isProcessing && storageManager.operationStatus.contains("clear") {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                        }
                     }
                 }
-            }
-            
-            Section(header: Text("Data Management")) {
-                Button(action: exportAllData) {
-                    Label("Export All Data", systemImage: "square.and.arrow.up")
-                        .foregroundColor(.blue)
-                }
+                .disabled(storageManager.isProcessing)
                 
-                Button(action: clearAllData) {
-                    Label("Clear All Data", systemImage: "exclamationmark.triangle")
+                if let stats = storageStats {
+                    Text("⚠️ Will permanently delete \(stats.totalRecordings) recordings (\(stats.formattedFileSize))")
+                        .font(.caption)
                         .foregroundColor(.red)
                 }
             }
         }
         .navigationTitle("Storage & Files")
-        .onAppear {
-            loadData()
-            calculateStorageUsed()
+        .refreshable {
+            loadStorageStats()
         }
-    }
-    
-    private func loadData() {
-        let folderStore = FolderDataStore(context: modelContext)
-        do {
-            folders = try folderStore.fetchFolders()
-            allRecordings = try folderStore.fetchAllRecordings()
-        } catch {
+        .task {
+            loadStorageStats()
         }
-    }
-    
-    private func calculateStorageUsed() {
-        DispatchQueue.global(qos: .utility).async {
-            var totalSize: Int64 = 0
-            let fileManager = FileManager.default
-            
-            for recording in allRecordings {
-                let url = recording.finalAudioURL()
-                if let attributes = try? fileManager.attributesOfItem(atPath: url.path),
-                   let size = attributes[.size] as? Int64 {
-                    totalSize += size
-                }
+        .alert("Storage Operation", isPresented: $showingAlert) {
+            Button("OK") { }
+        } message: {
+            Text(alertMessage)
+        }
+        .alert("⚠️ Clear All Data", isPresented: $showingClearDataAlert) {
+            Button("Cancel", role: .cancel) { 
+                // Do nothing - user cancelled
             }
-            
-            DispatchQueue.main.async {
-                storageUsed = ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
+            Button("Continue", role: .destructive) {
+                // Show secondary confirmation sheet
+                showingSecondaryConfirmation = true
+                confirmationText = ""
+            }
+        } message: {
+            if let stats = storageStats {
+                Text("This will permanently delete:\n\n• \(stats.totalRecordings) recordings\n• \(stats.totalFolders - 1) custom folders\n• All transcripts and summaries\n• \(stats.formattedFileSize) of audio data\n\nThis action cannot be undone!")
+            } else {
+                Text("This will permanently delete all your recordings, transcripts, summaries, and audio files.\n\nThis action cannot be undone!")
             }
         }
-    }
-    
-    private func cleanupEmptyFolders() {
-        let folderStore = FolderDataStore(context: modelContext)
-        do {
-            let emptyFolders = folders.filter { $0.recordings.isEmpty && !$0.isDefault }
-            for folder in emptyFolders {
-                try folderStore.deleteFolder(folder)
-            }
-            loadData()
-        } catch {
+        .sheet(isPresented: $showingSecondaryConfirmation) {
+            ClearDataConfirmationView(
+                confirmationText: $confirmationText,
+                onConfirm: {
+                    clearAllData()
+                    showingSecondaryConfirmation = false
+                    confirmationText = ""
+                },
+                onCancel: {
+                    showingSecondaryConfirmation = false
+                    confirmationText = ""
+                },
+                storageStats: storageStats
+            )
         }
     }
     
-    private func exportAllData() {
-        // Implementation for data export
+    // MARK: - Storage Actions
+    
+    private func loadStorageStats() {
+        Task {
+            do {
+                storageStats = try await storageManager.getStorageStats()
+            } catch {
+                alertMessage = "Failed to load storage stats: \(error.localizedDescription)"
+                showingAlert = true
+            }
+        }
+    }
+    
+    private func cleanEmptyFolders() {
+        Task {
+            do {
+                let result = try await storageManager.cleanEmptyFolders()
+                alertMessage = result.message
+                showingAlert = true
+                // Refresh stats after cleanup
+                loadStorageStats()
+            } catch {
+                alertMessage = "Failed to clean folders: \(error.localizedDescription)"
+                showingAlert = true
+            }
+        }
+    }
+    
+    private func showClearDataConfirmation() {
+        showingClearDataAlert = true
     }
     
     private func clearAllData() {
-        // Implementation with confirmation dialog
+        Task {
+            do {
+                let result = try await storageManager.clearAllData()
+                alertMessage = result.message
+                showingAlert = true
+                // Refresh stats after clearing
+                loadStorageStats()
+            } catch {
+                alertMessage = "Failed to clear data: \(error.localizedDescription)"
+                showingAlert = true
+            }
+        }
     }
 }
 
 // MARK: - App Info View
 struct AppInfoView: View {
-    @State private var showRating: Bool = false
-    @State private var rating: Int = 0
-    
     let appStoreURL = URL(string: "https://apps.apple.com/in/app/auryo/id6751236806")!
     
     var body: some View {
@@ -208,13 +538,6 @@ struct AppInfoView: View {
                     Label("Version", systemImage: "app.badge")
                     Spacer()
                     Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-                        .foregroundColor(.secondary)
-                }
-                
-                HStack {
-                    Label("Build", systemImage: "hammer")
-                    Spacer()
-                    Text(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-")
                         .foregroundColor(.secondary)
                 }
             }
@@ -239,16 +562,13 @@ struct AppInfoView: View {
                         .foregroundColor(.blue)
                 }
                 
-                Button(action: { showRating = true }) {
+                Button(action: { UIApplication.shared.open(appStoreURL) }) {
                     Label("Rate App", systemImage: "star")
                         .foregroundColor(.blue)
                 }
             }
         }
         .navigationTitle("About & Support")
-        .sheet(isPresented: $showRating) {
-            RatingSheet(rating: $rating, onSubmit: handleRating)
-        }
     }
     
     private func sendFeedback() {
@@ -257,47 +577,9 @@ struct AppInfoView: View {
             UIApplication.shared.open(url)
         }
     }
-    
-    private func handleRating(_ value: Int) {
-        showRating = false
-        if value >= 4 {
-            UIApplication.shared.open(appStoreURL)
-        } else {
-            sendFeedback()
-        }
-    }
 }
 
 // MARK: - Shared Components
-
-struct RatingSheet: View {
-    @Binding var rating: Int
-    var onSubmit: (Int) -> Void
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Text("Rate Us")
-                .font(.title)
-                .bold()
-            HStack {
-                ForEach(1...5, id: \.self) { i in
-                    Image(systemName: i <= rating ? "star.fill" : "star")
-                        .resizable()
-                        .frame(width: 40, height: 40)
-                        .foregroundColor(.yellow)
-                        .onTapGesture {
-                            rating = i
-                        }
-                }
-            }
-            Button("Submit") {
-                onSubmit(rating)
-            }
-            .padding()
-        }
-        .padding()
-    }
-}
 
 struct WebView: UIViewRepresentable {
     let webviewType: WebviewType

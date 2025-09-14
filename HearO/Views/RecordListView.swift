@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 extension Notification.Name {
     static let didSaveRecording = Notification.Name("didSaveRecording")
+    static let navigateToLiveTranscriptionSettings = Notification.Name("navigateToLiveTranscriptionSettings")
 }
 
 final class AudioPlayerDelegate: NSObject, AVAudioPlayerDelegate {
@@ -16,7 +17,8 @@ final class AudioPlayerDelegate: NSObject, AVAudioPlayerDelegate {
 struct RecordListView: View {
     @EnvironmentObject var di: ServiceContainer
     @Environment(\.modelContext) private var modelContext
-    @Binding var showRecordingSheet: Bool
+    let onStartRecording: () -> Void
+    let onExpandRecording: () -> Void
     @Binding var navigateToTranscript: Bool
     @Binding var currentTranscriptSession: Session?
     @Binding var currentTranscriptRecording: Recording?
@@ -61,6 +63,11 @@ struct RecordListView: View {
     @State private var newRecordingName: String = ""
     @State private var showingShareSheet: Bool = false
     @State private var shareItems: [Any] = []
+    
+    // Retention policy state
+    @State private var showingRetentionAlert = false
+    @State private var selectedRecordingForRetention: Recording? = nil
+    
     
     // Audio file import state
     @State private var showingAudioFilePicker: Bool = false
@@ -134,13 +141,7 @@ struct RecordListView: View {
                 if isPlaying, let player, playingID != nil, !isSeeking { playbackTime = player.currentTime }
                 if di.audio.isSessionActive {
                     if di.audio.isRecording { di.audio.updateMeters() }
-                    recElapsed = di.audio.currentTime
-                }
-            }
-            // New: when sheet is dismissed by swipe, refresh state so mini bar shows immediately
-            .onChange(of: showRecordingSheet) { oldValue, newValue in
-                if oldValue == true && newValue == false, di.audio.isSessionActive {
-                    // bump a state change to trigger view update and show mini bar
+                    // Update elapsed time from the audio service (which now correctly handles paused time)
                     recElapsed = di.audio.currentTime
                 }
             }
@@ -189,6 +190,26 @@ struct RecordListView: View {
                 }
             } message: {
                 Text("Your call has ended. Would you like to resume recording or stop and save the current session?")
+            }
+            .alert("Recording Will Be Deleted", isPresented: $showingRetentionAlert) {
+                Button("Upgrade to Premium") {
+                    // Show paywall or navigate to subscription
+                    showPaywallForRetentionWarning()
+                }
+                Button("OK", role: .cancel) {
+                    selectedRecordingForRetention = nil
+                }
+            } message: {
+                if let recording = selectedRecordingForRetention {
+                    let daysRemaining = getDaysUntilDeletion(for: recording)
+                    if daysRemaining <= 0 {
+                        Text("This recording will be automatically deleted soon as it's older than 7 days. Upgrade to Premium to keep all your recordings forever!")
+                    } else {
+                        Text("This recording will be automatically deleted in \(daysRemaining) day\(daysRemaining == 1 ? "" : "s"). Upgrade to Premium to keep all your recordings forever!")
+                    }
+                } else {
+                    Text("Free users can only keep recordings for 7 days. Upgrade to Premium for unlimited history!")
+                }
             }
             .sheet(isPresented: $showingShareSheet) {
                 if #available(iOS 16.0, *) {
@@ -239,7 +260,7 @@ struct RecordListView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("Start Recording", systemImage: "record.circle.fill") {
-                        showRecordingSheet = true
+                        onStartRecording()
                     }
                     
                     if !recordings.isEmpty {
@@ -305,7 +326,7 @@ struct RecordListView: View {
                 } description: {
                     Text("Tap Start Recording to create your first clip.")
                 } actions: {
-                    Button("Start Recording") { showRecordingSheet = true }
+                    Button("Start Recording") { onStartRecording() }
                 }
                 .padding()
             }
@@ -347,7 +368,14 @@ struct RecordListView: View {
                 
                 // Recording info
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(rec.title).font(.body)
+                    HStack {
+                        Text(rec.title).font(.body)
+                        Spacer()
+                        // Retention badge for free users
+                        if !di.subscription.isPremium {
+                            retentionBadge(for: rec)
+                        }
+                    }
                     Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -806,8 +834,8 @@ struct RecordListView: View {
             }
 
             if miniCollapsed == false {
-                // Left tappable area re-opens full RecordingView
-                Button(action: { showRecordingSheet = true }) {
+                // Left tappable area re-opens full RecordingView (expand existing session)
+                Button(action: { onExpandRecording() }) {
                     HStack(spacing: 12) {
                         Circle().fill(getStatusColor())
                             .frame(width: 10, height: 10)
@@ -829,8 +857,8 @@ struct RecordListView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                // Collapsed compact clock view
-                Button(action: { showRecordingSheet = true }) {
+                // Collapsed compact clock view (expand existing session)
+                Button(action: { onExpandRecording() }) {
                     Text(format(duration: recElapsed))
                         .font(.headline.monospacedDigit())
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1174,6 +1202,9 @@ struct RecordListView: View {
         }
     }
     
+    // MARK: - Recording Control Functions
+    
+    
     // MARK: - Actions
     private func toggleMiniPauseResume() {
         // Check if there are pending resume operations (interruption state)
@@ -1194,8 +1225,8 @@ struct RecordListView: View {
                 try di.audio.resumeRecording()
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } else {
-                // No session -> open full recorder
-                showRecordingSheet = true
+                // No session -> need to start fresh recording, check limits
+                onStartRecording()
             }
         } catch { UINotificationFeedbackGenerator().notificationOccurred(.error) }
     }
@@ -1406,6 +1437,119 @@ struct RecordListView: View {
             }
         }
         return di.audio.isRecording ? "Recording…" : "Paused"
+    }
+    
+    // MARK: - Retention Policy UI
+    
+    @ViewBuilder
+    private func retentionBadge(for recording: Recording) -> some View {
+        let daysRemaining = getDaysUntilDeletion(for: recording)
+        let isUrgent = daysRemaining <= 3
+        
+        // Always show days remaining for free users
+        Button(action: {
+            if isUrgent {
+                selectedRecordingForRetention = recording
+                showingRetentionAlert = true
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }) {
+            HStack(spacing: 3) {
+                Image(systemName: getBadgeIcon(for: daysRemaining))
+                    .font(.caption2)
+                Text(getBadgeText(for: daysRemaining))
+                    .font(.caption2)
+                    .fontWeight(.medium)
+            }
+            .foregroundColor(getBadgeTextColor(for: daysRemaining))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(getBadgeBackgroundColor(for: daysRemaining))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(getBadgeBorderColor(for: daysRemaining), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isUrgent) // Only tappable when urgent
+    }
+    
+    private func getDaysUntilDeletion(for recording: Recording) -> Int {
+        let daysSinceRecording = Calendar.current.dateComponents([.day], from: recording.createdAt, to: Date()).day ?? 0
+        return max(0, FeatureManager.FreeTierLimits.historyRetentionDays - daysSinceRecording)
+    }
+    
+    // MARK: - Badge Styling Helpers
+    
+    private func getBadgeIcon(for daysRemaining: Int) -> String {
+        switch daysRemaining {
+        case 0:
+            return "exclamationmark.triangle.fill"
+        case 1...3:
+            return "clock.fill"
+        default:
+            return "calendar"
+        }
+    }
+    
+    private func getBadgeText(for daysRemaining: Int) -> String {
+        switch daysRemaining {
+        case 0:
+            return "Expires Today"
+        case 1:
+            return "1 day left"
+        case 2...6:
+            return "\(daysRemaining) days left"
+        case 7:
+            return "New"
+        default:
+            return "\(daysRemaining)d"
+        }
+    }
+    
+    private func getBadgeTextColor(for daysRemaining: Int) -> Color {
+        switch daysRemaining {
+        case 0:
+            return .white
+        case 1...3:
+            return .white
+        default:
+            return .secondary
+        }
+    }
+    
+    private func getBadgeBackgroundColor(for daysRemaining: Int) -> Color {
+        switch daysRemaining {
+        case 0:
+            return .red
+        case 1:
+            return .orange
+        case 2...3:
+            return .yellow
+        default:
+            return Color(.systemGray6)
+        }
+    }
+    
+    private func getBadgeBorderColor(for daysRemaining: Int) -> Color {
+        switch daysRemaining {
+        case 0...3:
+            return .clear
+        default:
+            return Color(.systemGray4)
+        }
+    }
+    
+    private func showPaywallForRetentionWarning() {
+        // Navigate to paywall/subscription view
+        // This should trigger the paywall presentation
+        selectedRecordingForRetention = nil
+        
+        // You can customize this based on your paywall implementation
+        // For now, we'll just clear the selection
+        // In a real implementation, you'd trigger the paywall here
     }
 }
 

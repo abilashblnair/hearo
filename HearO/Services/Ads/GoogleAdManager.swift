@@ -93,10 +93,12 @@ class GoogleAdManager: NSObject, ObservableObject, AdManagerProtocol {
         // Log specific error codes for debugging
         let nsError = error as NSError
         switch nsError.code {
-        case 0, 1, 2, 3, 8: // Known GAD error codes
-            break
-        default:
-            break
+        case 0: break // kGADErrorInvalidRequest
+        case 1: break // kGADErrorNoFill
+        case 2: break // kGADErrorNetworkError
+        case 3: break // kGADErrorServerError
+        case 8: break // kGADErrorInvalidArgument
+        default: break
         }
 
         self.interstitialAd = nil

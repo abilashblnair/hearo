@@ -6,7 +6,8 @@ import AVFoundation
 struct FoldersListView: View {
     @EnvironmentObject var di: ServiceContainer
     @Environment(\.modelContext) private var modelContext
-    @Binding var showRecordingSheet: Bool
+    let onStartRecording: () -> Void
+    let onExpandRecording: () -> Void
     @Binding var navigateToTranscript: Bool
     @Binding var currentTranscriptSession: Session?
     @Binding var currentTranscriptRecording: Recording?
@@ -26,6 +27,17 @@ struct FoldersListView: View {
     @State private var importedDuration: TimeInterval = 0
     @State private var isImportingAudio: Bool = false
     @State private var importError: String?
+    @State private var showPaywall = false
+    
+    // Mini recorder state
+    @State private var recElapsed: TimeInterval = 0
+    @State private var showMiniSavePrompt = false
+    @State private var miniNameText: String = ""
+    @State private var miniLastDuration: TimeInterval = 0
+    @State private var miniCollapsed: Bool = false
+    @State private var miniURL: URL? = nil // capture URL before stop
+    
+    private let playbackTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
@@ -52,6 +64,17 @@ struct FoldersListView: View {
         .onReceive(NotificationCenter.default.publisher(for: .didSaveRecording)) { _ in
             Task { await loadFolders() }
         }
+        .onReceive(playbackTimer) { _ in
+            if di.audio.isSessionActive {
+                if di.audio.isRecording { di.audio.updateMeters() }
+                recElapsed = di.audio.currentTime
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if di.audio.isSessionActive { 
+                miniBar.padding(.horizontal) 
+            }
+        }
         .sheet(isPresented: $showingCreateFolder) {
             CreateFolderSheet { name, color in
                 await createFolder(name: name, colorName: color)
@@ -66,7 +89,8 @@ struct FoldersListView: View {
             if let folder = selectedFolder {
                 FolderDetailView(
                     folder: folder,
-                    showRecordingSheet: $showRecordingSheet,
+                    onStartRecording: onStartRecording,
+                    onExpandRecording: onExpandRecording,
                     navigateToTranscript: $navigateToTranscript,
                     currentTranscriptSession: $currentTranscriptSession,
                     currentTranscriptRecording: $currentTranscriptRecording
@@ -113,6 +137,11 @@ struct FoldersListView: View {
             Button("OK", role: .cancel) { importError = nil }
         } message: {
             Text(importError ?? "")
+        }
+        .alert("Name your recording", isPresented: $showMiniSavePrompt) {
+            TextField("Enter a title", text: $miniNameText)
+            Button("Save") { saveMiniRecording() }
+            Button("Cancel", role: .cancel) { showMiniSavePrompt = false }
         }
     }
     
@@ -166,7 +195,16 @@ struct FoldersListView: View {
                 } description: {
                     Text("Create your first folder to organize recordings.")
                 } actions: {
-                    Button("Create Folder") { showingCreateFolder = true }
+                    Button("Create Folder") { 
+                        // Check premium access for folder management
+                        let folderCheck = di.featureManager.canManageFolders()
+                        if !folderCheck.allowed {
+                            showPaywall = true
+                            return
+                        }
+                        
+                        showingCreateFolder = true 
+                    }
                 }
                 .padding()
             }
@@ -540,6 +578,152 @@ struct FoldersListView: View {
         importedAudioURL = nil
         importedDuration = 0
         showingUploadSavePopup = false
+    }
+    
+    // MARK: - Mini Recorder Bar
+    
+    private var miniBar: some View {
+        HStack(spacing: 12) {
+            // Collapse/expand affordance
+            Button(action: { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { miniCollapsed.toggle() } }) {
+                Image(systemName: miniCollapsed ? "chevron.up" : "chevron.down")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color(.tertiarySystemFill)))
+            }
+
+            if miniCollapsed == false {
+                // Left tappable area re-opens full RecordingView
+                Button(action: { onExpandRecording() }) {
+                    HStack(spacing: 12) {
+                        Circle().fill(getStatusColor())
+                            .frame(width: 10, height: 10)
+                            .opacity(di.audio.isRecording ? 1 : 0.6)
+                            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: di.audio.isRecording)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(getStatusText())
+                                .font(.footnote).foregroundColor(.secondary)
+                            Text(format(duration: recElapsed))
+                                .font(.headline.monospacedDigit())
+                        }
+                        // Tiny reactive bar
+                        Rectangle()
+                            .fill(LinearGradient(colors: [.red, .orange], startPoint: .bottom, endPoint: .top))
+                            .frame(width: 24, height: max(8, CGFloat(max(0, (di.audio.currentPower + 60) / 60)) * 24))
+                            .cornerRadius(4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Collapsed compact clock view
+                Button(action: { onExpandRecording() }) {
+                    Text(format(duration: recElapsed))
+                        .font(.headline.monospacedDigit())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Pause/Resume or Stop prompt
+            Button(action: toggleMiniPauseResume) {
+                Image(systemName: di.audio.isRecording ? "pause.fill" : "play.fill")
+                    .font(.headline)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            Button(role: .destructive, action: stopMiniAndPrompt) {
+                Image(systemName: "stop.fill").font(.headline).foregroundColor(.red)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(LinearGradient(colors: [Color(.secondarySystemBackground), Color(.systemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator), lineWidth: 0.5))
+    }
+    
+    // MARK: - Mini Recorder Actions
+    
+    private func toggleMiniPauseResume() {
+        // Check if there are pending resume operations (interruption state)
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl,
+           unifiedService.hasPendingResumeOperations {
+            // Show resume prompt for interrupted recording - not implemented in this view
+            return
+        }
+        
+        do {
+            if di.audio.isRecording {
+                // Pause only
+                try di.audio.pauseRecording()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } else if di.audio.isSessionActive {
+                // Resume if we still have a session
+                try di.audio.resumeRecording()
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } else {
+                // No session -> need to start fresh recording, check limits
+                onStartRecording()
+            }
+        } catch { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+    }
+    
+    private func stopMiniAndPrompt() {
+        do {
+            // Capture URL before stopping, because stop clears the recorder
+            miniURL = di.audio.currentRecordingURL
+            miniLastDuration = try di.audio.stopRecording()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            showMiniSavePrompt = true
+        } catch { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+    }
+    
+    private func saveMiniRecording() {
+        guard let url = miniURL else { return }
+        let filename = url.deletingPathExtension().lastPathComponent
+        let id = UUID(uuidString: filename) ?? UUID()
+        let title = miniNameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? ("Session " + Date.now.formatted(date: .abbreviated, time: .shortened)) : miniNameText
+        // Store relative path so sandbox container UUID changes don't break playbook
+        let relativePath = "audio/\(id.uuidString).m4a"
+        let rec = Recording(id: id, title: title, createdAt: Date(), audioURL: relativePath, duration: miniLastDuration, notes: nil)
+        do {
+            let folderStore = FolderDataStore(context: modelContext)
+            // Save to default folder
+            try folderStore.saveRecording(rec)
+            NotificationCenter.default.post(name: .didSaveRecording, object: nil)
+            miniNameText = ""; showMiniSavePrompt = false; miniURL = nil
+        } catch { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func format(duration: TimeInterval) -> String {
+        let total = Int(duration)
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+    
+    private func getStatusColor() -> Color {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            // Check if there are pending operations (interruption state)
+            if unifiedService.hasPendingResumeOperations {
+                return Color.yellow // Interrupted state
+            }
+        }
+        return di.audio.isRecording ? Color.red : Color.orange
+    }
+    
+    private func getStatusText() -> String {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            // Check if there are pending operations (interruption state)
+            if unifiedService.hasPendingResumeOperations {
+                return "Call in progress"
+            }
+        }
+        return di.audio.isRecording ? "Recording…" : "Paused"
     }
     
     // MARK: - Debug Utilities

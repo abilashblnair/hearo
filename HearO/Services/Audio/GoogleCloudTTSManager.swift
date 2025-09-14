@@ -231,7 +231,7 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
                 self.isSpeaking = false
             }
             
-            if error != nil {
+            if let error = error {
                 DispatchQueue.main.async {
                     completion?(false)
                 }
@@ -257,7 +257,7 @@ final class GoogleCloudTTSManager: NSObject, ObservableObject {
                         completion?(true)
                     }
                 } else if let error = json?["error"] as? [String: Any],
-                         let _ = error["message"] as? String {
+                         let message = error["message"] as? String {
                     DispatchQueue.main.async {
                         completion?(false)
                     }
@@ -315,7 +315,7 @@ extension GoogleCloudTTSManager: AVAudioPlayerDelegate {
         DispatchQueue.main.async {
             self.isPlaying = false
         }
-                if error != nil {
+        if let error = error {
         }
     }
 }

@@ -7,6 +7,8 @@ struct RecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var di: ServiceContainer
     @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var settings = SettingsService.shared
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
 
     @State private var isRecording = false
     @State private var elapsed: TimeInterval = 0
@@ -21,6 +23,11 @@ struct RecordingView: View {
     
     // Cancel confirmation alert
     @State private var showCancelConfirmation = false
+    
+    // Premium feature states
+    @State private var showPaywall = false
+    @State private var recordingLimitReached = false
+    @State private var durationLimitWarning = false
 
     // Real-time transcript state
     @State private var transcriptLines: [String] = []
@@ -43,6 +50,7 @@ struct RecordingView: View {
     // Faster metering for smoother waveform
     private let meterTimer = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()
     var onSave: (() -> Void)? = nil
+    var onNavigateToSettings: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
@@ -111,10 +119,23 @@ struct RecordingView: View {
                                                 .frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 350 : 280)
                                             }
 
-                                            // Timer
-                                            Text(timeString(from: elapsed, showMillis: true))
-                                                .font(.system(size: UIDevice.current.userInterfaceIdiom == .pad ? 42 : 36, weight: .bold, design: .monospaced))
-                                                .foregroundColor(.primary)
+                                            // Timer with premium limits warning
+                                            VStack(spacing: 4) {
+                                                Text(timeString(from: elapsed, showMillis: true))
+                                                    .font(.system(size: UIDevice.current.userInterfaceIdiom == .pad ? 42 : 36, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(durationLimitWarning ? .red : .primary)
+                                                
+                                                // Duration limit warning for free users
+                                                if !di.subscription.isPremium, let maxDuration = di.featureManager.getMaxRecordingDuration() {
+                                                    let remaining = max(0, maxDuration - elapsed)
+                                                    if remaining <= 60 { // Show warning in last minute
+                                                        Text("⏱️ \(Int(remaining))s remaining")
+                                                            .font(.caption)
+                                                            .foregroundColor(.orange)
+                                                            .opacity(remaining > 0 ? 1 : 0)
+                                                    }
+                                                }
+                                            }
                                         }
                                         .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 40 : 16)
                                         .background(Color(.systemBackground))
@@ -125,15 +146,19 @@ struct RecordingView: View {
                                         // Transcript section
                                         VStack(alignment: .leading, spacing: 12) {
                                             HStack {
-                                                Image(systemName: liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
-                                                    .foregroundColor(liveTranscriptActive ? .green : .blue)
+                                                Image(systemName: settings.isLiveTranscriptionEnabled && liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
+                                                    .foregroundColor(settings.isLiveTranscriptionEnabled ? (liveTranscriptActive ? .green : .blue) : .gray)
                                                 Text("Live Transcript")
                                                     .font(.headline)
                                                     .fontWeight(.semibold)
                                                 Spacer()
-
-                                                if !transcriptPermissionGranted {
-                                                    Button("Enable") {
+                                                
+                                                if !settings.isLiveTranscriptionEnabled {
+                                                    Text("Disabled")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                } else if !transcriptPermissionGranted {
+                                                    Button("Grant Permissions") {
                                                         Task { await requestTranscriptPermissions() }
                                                     }
                                                     .font(.caption)
@@ -147,18 +172,59 @@ struct RecordingView: View {
                                                         .font(.caption)
                                                         .foregroundColor(.secondary)
                                                 } else {
-                                                    HStack(spacing: 4) {
-                                                        Circle()
-                                                            .fill(liveTranscriptActive ? Color.green : Color.orange)
-                                                            .frame(width: 6, height: 6)
-                                                        Text(liveTranscriptActive ? "Transcribing" : "Ready")
-                                                            .font(.caption)
-                                                            .foregroundColor(.secondary)
+                                                    HStack(spacing: 8) {
+                                                        HStack(spacing: 4) {
+                                                            Circle()
+                                                                .fill(liveTranscriptActive ? Color.green : Color.orange)
+                                                                .frame(width: 6, height: 6)
+                                                            Text(liveTranscriptActive ? "Transcribing" : (isRecording ? "Starting..." : "Ready"))
+                                                                .font(.caption)
+                                                                .foregroundColor(.secondary)
+                                                        }
+                                                        
+                                                        // Manual start button for debugging/fallback
+                                                        if isRecording && !liveTranscriptActive && settings.isLiveTranscriptionEnabled {
+                                                            Button(action: {
+                                                                Task {
+                                                                    await manualStartTranscription()
+                                                                }
+                                                            }) {
+                                                                Image(systemName: "play.circle.fill")
+                                                                    .font(.caption)
+                                                                    .foregroundColor(.blue)
+                                                            }
+                                                            .buttonStyle(PlainButtonStyle())
+                                                        }
                                                     }
                                                 }
                                             }
                                             .padding(.horizontal)
                                             .padding(.top, 20)
+                                            
+                                            // Informational message when disabled
+                                            if !settings.isLiveTranscriptionEnabled {
+                                                VStack(spacing: 8) {
+                                                    HStack {
+                                                        Spacer()
+                                                        Text("Live transcription is disabled")
+                                                            .font(.caption)
+                                                            .foregroundColor(.secondary)
+                                                        Spacer()
+                                                    }
+                                                    
+                                                    Button("Enable in Settings") {
+                                                        dismiss()
+                                                        onNavigateToSettings?()
+                                                    }
+                                                    .font(.caption)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 6)
+                                                    .background(Color.blue.opacity(0.1))
+                                                    .foregroundColor(.blue)
+                                                    .cornerRadius(8)
+                                                }
+                                                .padding(.horizontal)
+                                            }
 
                                             ScrollViewReader { scrollProxy in
                                                 ScrollView {
@@ -288,10 +354,23 @@ struct RecordingView: View {
                                         .frame(height: 280)
                                     }
 
-                                    // Timer
-                                    Text(timeString(from: elapsed, showMillis: true))
-                                        .font(.system(size: 36, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.primary)
+                                    // Timer with premium limits warning
+                                    VStack(spacing: 4) {
+                                        Text(timeString(from: elapsed, showMillis: true))
+                                            .font(.system(size: 36, weight: .bold, design: .monospaced))
+                                            .foregroundColor(durationLimitWarning ? .red : .primary)
+                                        
+                                        // Duration limit warning for free users
+                                        if !di.subscription.isPremium, let maxDuration = di.featureManager.getMaxRecordingDuration() {
+                                            let remaining = max(0, maxDuration - elapsed)
+                                            if remaining <= 60 { // Show warning in last minute
+                                                Text("⏱️ \(Int(remaining))s remaining")
+                                                    .font(.caption)
+                                                    .foregroundColor(.orange)
+                                                    .opacity(remaining > 0 ? 1 : 0)
+                                            }
+                                        }
+                                    }
                                 }
                                 .padding(.horizontal, 16)
                                 .background(Color(.systemBackground))
@@ -302,15 +381,19 @@ struct RecordingView: View {
                                 // Transcript section
                                 VStack(alignment: .leading, spacing: 12) {
                                     HStack {
-                                        Image(systemName: liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
-                                            .foregroundColor(liveTranscriptActive ? .green : .blue)
+                                        Image(systemName: settings.isLiveTranscriptionEnabled && liveTranscriptActive ? "text.bubble.fill" : "text.bubble")
+                                            .foregroundColor(settings.isLiveTranscriptionEnabled ? (liveTranscriptActive ? .green : .blue) : .gray)
                                         Text("Live Transcript")
                                             .font(.headline)
                                             .fontWeight(.semibold)
                                         Spacer()
                                         
-                                        if !transcriptPermissionGranted {
-                                            Button("Enable") {
+                                        if !settings.isLiveTranscriptionEnabled {
+                                            Text("Disabled")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else if !transcriptPermissionGranted {
+                                            Button("Grant Permissions") {
                                                 Task { await requestTranscriptPermissions() }
                                             }
                                             .font(.caption)
@@ -324,18 +407,59 @@ struct RecordingView: View {
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         } else {
-                                            HStack(spacing: 4) {
-                                                Circle()
-                                                    .fill(liveTranscriptActive ? Color.green : Color.orange)
-                                                    .frame(width: 6, height: 6)
-                                                Text(liveTranscriptActive ? "Transcribing" : "Ready")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
+                                            HStack(spacing: 8) {
+                                                HStack(spacing: 4) {
+                                                    Circle()
+                                                        .fill(liveTranscriptActive ? Color.green : Color.orange)
+                                                        .frame(width: 6, height: 6)
+                                                    Text(liveTranscriptActive ? "Transcribing" : (isRecording ? "Starting..." : "Ready"))
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                }
+                                                
+                                                // Manual start button for debugging/fallback
+                                                if isRecording && !liveTranscriptActive && settings.isLiveTranscriptionEnabled {
+                                                    Button(action: {
+                                                        Task {
+                                                            await manualStartTranscription()
+                                                        }
+                                                    }) {
+                                                        Image(systemName: "play.circle.fill")
+                                                            .font(.caption)
+                                                            .foregroundColor(.blue)
+                                                    }
+                                                    .buttonStyle(PlainButtonStyle())
+                                                }
                                             }
                                         }
                                     }
                                     .padding(.horizontal)
                                     .padding(.top, 20)
+                                    
+                                    // Informational message when disabled
+                                    if !settings.isLiveTranscriptionEnabled {
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Spacer()
+                                                Text("Live transcription is disabled")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                            }
+                                            
+                                            Button("Enable in Settings") {
+                                                dismiss()
+                                                onNavigateToSettings?()
+                                            }
+                                            .font(.caption)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(Color.blue.opacity(0.1))
+                                            .foregroundColor(.blue)
+                                            .cornerRadius(8)
+                                        }
+                                        .padding(.horizontal)
+                                    }
 
                                     ScrollViewReader { scrollProxy in
                                         ScrollView {
@@ -547,9 +671,21 @@ struct RecordingView: View {
                         
                         Spacer()
                         
-                        Text(timeString(from: elapsed))
-                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.primary)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(timeString(from: elapsed))
+                                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                                .foregroundColor(durationLimitWarning ? .red : .primary)
+                            
+                            // Recording limit info for free users
+                            if !di.subscription.isPremium {
+                                let remaining = di.featureManager.getRemainingRecordings()
+                                if remaining >= 0 {
+                                    Text("\(remaining) left today")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
                     }
                     
                     // Control buttons
@@ -610,35 +746,54 @@ struct RecordingView: View {
                 .padding(.horizontal, 16)
             }
         }
+        .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
+        .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
+            SubscriptionSuccessView()
+                .environmentObject(subscriptionManager)
+        }
         .onAppear {
-            // Check actual system permissions to restore transcriptPermissionGranted properly
-            Task {
-                let speechAuthStatus = SFSpeechRecognizer.authorizationStatus()
-                let isPermissionGranted = speechAuthStatus == .authorized
-                
-                if isPermissionGranted && !transcriptPermissionGranted {
-                    await MainActor.run {
-                        transcriptPermissionGranted = true
-                    }
-                }
-            }
-            
-            // Set up audio service callbacks
+            // Set up audio service callbacks first
             setupAudioCallbacks()
             
             // Set up notification action observers
             setupNotificationObservers()
             
+            // Initialize and handle permissions
             Task {
+                // Check actual system permissions
+                let speechAuthStatus = SFSpeechRecognizer.authorizationStatus()
+                let isPermissionGranted = speechAuthStatus == .authorized
+                
+                await MainActor.run {
+                    // Update permission state
+                    transcriptPermissionGranted = isPermissionGranted
+                    
+                    // ✅ CRITICAL: Synchronize transcriptEnabled with settings and permissions
+                    if settings.isLiveTranscriptionEnabled {
+                        transcriptEnabled = isPermissionGranted
+                        print("🎤 Live transcription setting is ON, permissions: \(isPermissionGranted)")
+                    } else {
+                        transcriptEnabled = false
+                        print("🎤 Live transcription setting is OFF")
+                    }
+                }
+                
                 // Request notification permissions
                 _ = await di.notifications.requestPermissions()
                 
-                // First request permissions for transcription if not already granted
-                if !transcriptPermissionGranted {
+                // Request transcription permissions if needed
+                if settings.isLiveTranscriptionEnabled && !isPermissionGranted {
+                    print("🎤 Requesting speech permissions...")
                     await requestTranscriptPermissions()
+                    
+                    // Update state after permission request
+                    await MainActor.run {
+                        transcriptEnabled = transcriptPermissionGranted
+                        print("🎤 After permission request - granted: \(transcriptPermissionGranted), enabled: \(transcriptEnabled)")
+                    }
                 }
                 
-                // Then start or attach to recording session
+                // Finally start or attach to recording session
                 await attachOrStart()
             }
         }
@@ -660,6 +815,14 @@ struct RecordingView: View {
         .sensoryFeedback(.success, trigger: showSavePopup)
         .alert("Error", isPresented: .constant(error != nil), actions: {
             Button("OK", role: .cancel) { error = nil }
+            if let error = error, error.lowercased().contains("permission") {
+                Button("Go to Settings") {
+                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(settingsUrl)
+                    }
+                    self.error = nil
+                }
+            }
         }, message: {
             Text(error ?? "")
         })
@@ -703,6 +866,52 @@ struct RecordingView: View {
             }
         } message: {
             Text("Your \(interruptionType) has ended. Would you like to resume recording or stop and save the current session?")
+        }
+        .onChange(of: settings.showRecordingNotifications) { _, newValue in
+            // Handle notification toggle changes during recording
+            if isRecording {
+                if newValue {
+                    // Notifications turned on - start them if recording
+                    di.notifications.startRecordingNotifications(title: "Recording in Progress")
+                } else {
+                    // Notifications turned off - stop ongoing notifications
+                    di.notifications.stopRecordingNotifications()
+                }
+            }
+        }
+        .onChange(of: settings.isLiveTranscriptionEnabled) { _, newValue in
+            // Handle live transcription setting changes
+            Task {
+                await MainActor.run {
+                    print("🎤 Live transcription setting changed to: \(newValue)")
+                    
+                    // ✅ Update local state immediately to reflect the change in UI
+                    if newValue {
+                        // User enabled live transcription
+                        transcriptEnabled = transcriptPermissionGranted
+                        print("🎤 Setting enabled - transcriptEnabled: \(transcriptEnabled), permissions: \(transcriptPermissionGranted)")
+                        
+                        // Request permissions if not granted
+                        if !transcriptPermissionGranted {
+                            Task {
+                                await requestTranscriptPermissions()
+                                await MainActor.run {
+                                    transcriptEnabled = transcriptPermissionGranted
+                                    print("🎤 After permission request - enabled: \(transcriptEnabled)")
+                                }
+                            }
+                        }
+                    } else {
+                        // User disabled live transcription
+                        transcriptEnabled = false
+                        liveTranscriptActive = false
+                        print("🎤 Setting disabled - transcriptEnabled: false")
+                    }
+                }
+                
+                // Handle active recording session changes
+                await handleLiveTranscriptionSettingChange(enabled: newValue)
+            }
         }
         .navigationBarHidden(true)
         } // NavigationStack closing brace
@@ -819,8 +1028,242 @@ struct RecordingView: View {
             self.error = "Failed to toggle transcription: \(error.localizedDescription)"
         }
     }
+    
+    @MainActor
+    private func handleLiveTranscriptionSettingChange(enabled: Bool) async {
+        print("🎤 handleLiveTranscriptionSettingChange called - enabled: \(enabled), isSessionActive: \(di.audio.isSessionActive)")
+        
+        // Only handle changes if we have an active recording session
+        guard di.audio.isSessionActive else { 
+            print("🎤 No active recording session, skipping transcription change")
+            return 
+        }
+        
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else {
+            if enabled {
+                self.error = "Live transcription not available with this audio service"
+                print("❌ UnifiedAudioRecordingService not available")
+            }
+            return
+        }
+        
+        if enabled {
+            print("🎤 Enabling live transcription during active recording...")
+            
+            // First check if we have permissions
+            if !transcriptPermissionGranted {
+                print("🎤 Requesting transcript permissions...")
+                await requestTranscriptPermissions()
+                
+                // Check if permission was granted after the request
+                if !transcriptPermissionGranted {
+                    print("❌ Transcript permissions not granted, cannot enable transcription")
+                    self.error = "Speech recognition permission is required for live transcription"
+                    
+                    // Reset the toggle if permissions failed
+                    DispatchQueue.main.async {
+                        SettingsService.shared.isLiveTranscriptionEnabled = false
+                    }
+                    return
+                }
+                print("✅ Transcript permissions granted")
+            }
+            
+            // Check if transcription is already active in the audio service
+            let isServiceTranscriptionActive = unifiedService.isTranscriptionActive
+            print("🎤 Service transcription active: \(isServiceTranscriptionActive)")
+            
+            if !isServiceTranscriptionActive {
+                // Use the specialized method for enabling during recording
+                print("🎤 Starting transcription service during recording...")
+                do {
+                    try await unifiedService.enableTranscriptionDuringRecording()
+                    
+                    // Update UI state after successful start
+                    transcriptEnabled = true
+                    liveTranscriptActive = true
+                    
+                    // Set up callback for new transcription session
+                    setupTranscriptCallback(unifiedService)
+                    
+                    print("✅ Successfully enabled live transcription during recording")
+                    print("🎤 Updated state - transcriptEnabled: \(transcriptEnabled), liveTranscriptActive: \(liveTranscriptActive)")
+                    
+                    // Provide success feedback
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                } catch {
+                    print("❌ Failed to enable transcription during recording: \(error)")
+                    self.error = "Failed to enable live transcription: \(error.localizedDescription)"
+                    
+                    // Reset the toggle if enabling failed
+                    DispatchQueue.main.async {
+                        SettingsService.shared.isLiveTranscriptionEnabled = false
+                    }
+                    return
+                }
+            } else {
+                // Transcription is already active, just update UI state
+                transcriptEnabled = true
+                liveTranscriptActive = true
+                setupTranscriptCallback(unifiedService)
+                print("✅ Live transcription was already active, updated UI state")
+            }
+        } else {
+            // User disabled live transcription during recording
+            print("🎤 Disabling live transcription during recording...")
+            if liveTranscriptActive || unifiedService.isTranscriptionActive {
+                unifiedService.disableTranscription()
+                transcriptEnabled = false
+                liveTranscriptActive = false
+                
+                print("✅ Disabled live transcription during recording")
+                
+                // Provide feedback that transcription was stopped
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } else {
+                print("🎤 Transcription was not active, nothing to disable")
+            }
+        }
+    }
 
 
+    
+    /// Manual trigger to start live transcription during recording (debugging/fallback)
+    @MainActor
+    private func manualStartTranscription() async {
+        print("🎤 Manual transcription start requested...")
+        print("   - Current state: isRecording=\(isRecording), liveTranscriptActive=\(liveTranscriptActive), transcriptEnabled=\(transcriptEnabled)")
+        print("   - Settings: isLiveTranscriptionEnabled=\(settings.isLiveTranscriptionEnabled)")
+        print("   - Permissions: transcriptPermissionGranted=\(transcriptPermissionGranted)")
+        
+        guard isRecording else {
+            print("❌ Cannot start transcription: Not recording")
+            self.error = "Cannot start transcription: Not recording"
+            return
+        }
+        
+        guard settings.isLiveTranscriptionEnabled else {
+            print("❌ Cannot start transcription: Setting disabled")
+            self.error = "Live transcription is disabled in settings"
+            return
+        }
+        
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else {
+            print("❌ Cannot start transcription: UnifiedAudioRecordingService not available")
+            self.error = "Live transcription not available with this audio service"
+            return
+        }
+        
+        // Check permissions first
+        if !transcriptPermissionGranted {
+            print("🎤 Requesting speech permissions for manual start...")
+            await requestTranscriptPermissions()
+            
+            if !transcriptPermissionGranted {
+                print("❌ Speech permissions denied")
+                self.error = "Speech recognition permission is required"
+                return
+            }
+        }
+        
+        do {
+            print("🎤 Attempting to enable transcription during recording...")
+            print("   - Service transcription active: \(unifiedService.isTranscriptionActive)")
+            
+            try await unifiedService.enableTranscriptionDuringRecording()
+            
+            // Update UI state
+            transcriptEnabled = true
+            liveTranscriptActive = true
+            
+            // Set up callback
+            setupTranscriptCallback(unifiedService)
+            
+            print("✅ Manual transcription start successful!")
+            print("   - New state: transcriptEnabled=\(transcriptEnabled), liveTranscriptActive=\(liveTranscriptActive)")
+            
+            // Provide success feedback
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            
+        } catch {
+            print("❌ Manual transcription start failed: \(error)")
+            self.error = "Failed to start live transcription: \(error.localizedDescription)"
+        }
+    }
+    
+    /// Check transcription state after a delay and attempt to fix if needed
+    @MainActor
+    private func checkAndFixTranscriptionState() async {
+        print("🎤 === TRANSCRIPTION STATE CHECK ===")
+        print("   - Expected: settings=\(settings.isLiveTranscriptionEnabled), permissions=\(transcriptPermissionGranted)")
+        print("   - Current UI: enabled=\(transcriptEnabled), active=\(liveTranscriptActive)")
+        print("   - Recording active: \(isRecording)")
+        
+        // Only proceed if we should have transcription but don't
+        guard settings.isLiveTranscriptionEnabled && transcriptPermissionGranted && isRecording else {
+            print("   - Check skipped: conditions not met")
+            return
+        }
+        
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else {
+            print("   - Check skipped: UnifiedService not available")
+            return
+        }
+        
+        let serviceTranscriptionActive = unifiedService.isTranscriptionActive
+        print("   - Service transcription active: \(serviceTranscriptionActive)")
+        
+        // Case 1: Service thinks transcription is active but UI doesn't reflect it
+        if serviceTranscriptionActive && !liveTranscriptActive {
+            print("🔧 Fix Case 1: Service active but UI not updated")
+            liveTranscriptActive = true
+            transcriptEnabled = true
+            setupTranscriptCallback(unifiedService)
+            print("✅ UI state synchronized with service")
+            return
+        }
+        
+        // Case 2: Neither service nor UI think transcription is active
+        if !serviceTranscriptionActive && !liveTranscriptActive {
+            print("🔧 Fix Case 2: Neither service nor UI active - attempting restart")
+            
+            // Check if we've received any transcript updates recently
+            let hasRecentTranscript = !transcriptLines.isEmpty || !currentPartialText.isEmpty
+            if hasRecentTranscript {
+                print("   - Found recent transcript data, transcription might be working despite flags")
+                liveTranscriptActive = true
+                return
+            }
+            
+            // Try to restart transcription
+            do {
+                print("   - Attempting to enable transcription during recording...")
+                try await unifiedService.enableTranscriptionDuringRecording()
+                
+                transcriptEnabled = true
+                liveTranscriptActive = true
+                setupTranscriptCallback(unifiedService)
+                
+                print("✅ Transcription restarted successfully")
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                
+                // Set up another check in case this fails too
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                    Task { @MainActor in
+                        if self.liveTranscriptActive && self.transcriptLines.isEmpty && self.currentPartialText.isEmpty {
+                            print("⚠️ Transcription still not producing results after restart")
+                        }
+                    }
+                }
+                
+            } catch {
+                print("❌ Failed to restart transcription: \(error)")
+                print("   - Transcription may not work for this session")
+            }
+        }
+        
+        print("🎤 === TRANSCRIPTION CHECK COMPLETE ===")
+    }
     
     private func setupTranscriptCallback(_ unifiedService: UnifiedAudioRecordingServiceImpl) {
         
@@ -862,14 +1305,22 @@ struct RecordingView: View {
             }
             startTimers()
             
-            // Restore transcription state if it was already active
+            // Restore transcription state if toggle is enabled and it was already active
             if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
-                if unifiedService.isTranscriptionActive {
+                if settings.isLiveTranscriptionEnabled && unifiedService.isTranscriptionActive {
                     transcriptEnabled = true
                     liveTranscriptActive = true
                     transcriptPermissionGranted = true  // ✅ CRITICAL: Set permission if transcription is active
-                    
+                    setupTranscriptCallback(unifiedService)  // ✅ CRITICAL: Ensure callback is set
+                    print("🎤 Restored active transcription session")
                 } else {
+                    // Disable transcription if toggle is off
+                    if !settings.isLiveTranscriptionEnabled {
+                        unifiedService.disableTranscription()
+                    }
+                    transcriptEnabled = false
+                    liveTranscriptActive = false
+                    print("🎤 No active transcription session to restore")
                 }
             }
             
@@ -879,37 +1330,112 @@ struct RecordingView: View {
     }
 
     func startRecording() async {
-        do {
-            // Randomly show ad (1 in 3 chance) before recording
-        if Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
-            di.adManager.presentInterstitial(from: rootVC) { _ in
-                // Continue with recording after ad
-            }
+        // Check recording limits for free users
+        let recordingCheck = di.featureManager.canStartRecording()
+        if !recordingCheck.allowed {
+            showPaywall = true
+            return
         }
+        
+        do {
+            // Show ads only for free users
+            if di.featureManager.shouldShowAds() {
+                // Randomly show ad (1 in 3 chance) before recording
+                if Int.random(in: 1...3) == 1, di.adManager.isAdReady, 
+                   let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+                    di.adManager.presentInterstitial(from: rootVC) { _ in
+                        // Continue with recording after ad
+                    }
+                }
+            }
             
             sessionID = UUID()
             let url = try AudioFileStore.url(for: sessionID)
             try await di.audio.requestMicPermission()
             
-            // Start recording with native transcription if permissions are granted
-            if transcriptPermissionGranted, let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
-                try await unifiedService.startRecordingWithNativeTranscription(to: url)
-                transcriptEnabled = true
-                liveTranscriptActive = true
-                // Ensure callback is set up for new recordings
-                setupTranscriptCallback(unifiedService)
+            print("🎤 === STARTING RECORDING DEBUG ===")
+            print("   - Live transcription setting: \(settings.isLiveTranscriptionEnabled)")
+            print("   - Transcript permissions granted: \(transcriptPermissionGranted)")
+            print("   - UnifiedService available: \(di.audio is UnifiedAudioRecordingServiceImpl)")
+            print("   - Current transcript state: enabled=\(transcriptEnabled), active=\(liveTranscriptActive)")
+            
+            // Start recording with native transcription if toggle is enabled and permissions are granted
+            if settings.isLiveTranscriptionEnabled && transcriptPermissionGranted, 
+               let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                print("🎤 ✅ All conditions met - starting recording with native transcription")
+                
+                do {
+                    try await unifiedService.startRecordingWithNativeTranscription(to: url)
+                    print("✅ UnifiedService.startRecordingWithNativeTranscription completed successfully")
+                    
+                    // Verify the service thinks transcription is active
+                    let serviceTranscriptionActive = unifiedService.isTranscriptionActive
+                    print("   - Service reports transcription active: \(serviceTranscriptionActive)")
+                    
+                    // Update UI state
+                    transcriptEnabled = true
+                    liveTranscriptActive = true
+                    
+                    // Ensure callback is set up for new recordings
+                    setupTranscriptCallback(unifiedService)
+                    print("✅ UI state updated - enabled: \(transcriptEnabled), active: \(liveTranscriptActive)")
+                    
+                    // Double-check that we actually have the callback set
+                    if unifiedService.onTranscriptUpdate != nil {
+                        print("✅ Transcript callback is set up")
+                    } else {
+                        print("⚠️ WARNING: Transcript callback is nil!")
+                    }
+                    
+                } catch {
+                    print("❌ ERROR in startRecordingWithNativeTranscription: \(error)")
+                    print("   - Falling back to basic recording...")
+                    try di.audio.startRecording(to: url)
+                    transcriptEnabled = false
+                    liveTranscriptActive = false
+                    print("🎤 Recording started without transcription (fallback)")
+                }
+                
             } else {
-                // Fall back to basic recording
+                print("🎤 ❌ Conditions not met for transcription:")
+                print("   - Setting enabled: \(settings.isLiveTranscriptionEnabled)")
+                print("   - Permissions granted: \(transcriptPermissionGranted)")
+                print("   - UnifiedService available: \(di.audio is UnifiedAudioRecordingServiceImpl)")
+                print("   - Starting basic recording instead...")
+                
                 try di.audio.startRecording(to: url)
+                transcriptEnabled = false
+                liveTranscriptActive = false
+                print("🎤 Recording started without transcription")
             }
+            
+            print("🎤 === RECORDING START COMPLETE ===")
+            print("   - Final state: enabled=\(transcriptEnabled), active=\(liveTranscriptActive)")
+            print("   - Recording active: \(isRecording)")
             
             isRecording = true
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            elapsed = 0
+            elapsed = di.audio.currentTime // Get initial time from audio service
+            durationLimitWarning = false
             startTimers()
             
-            // Start notification updates
-            di.notifications.startRecordingNotifications(title: "New Recording")
+            // If transcription was supposed to start but isn't active, set up a check
+            if settings.isLiveTranscriptionEnabled && transcriptPermissionGranted && transcriptEnabled && !liveTranscriptActive {
+                print("⚠️ Transcription enabled but not active - setting up delayed check...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    Task { @MainActor in
+                        await self.checkAndFixTranscriptionState()
+                    }
+                }
+            }
+            
+            // Record this recording for free users
+            di.featureManager.recordNewRecording()
+            
+            // Start notification updates if enabled
+            if settings.showRecordingNotifications {
+                di.notifications.startRecordingNotifications(title: "New Recording")
+            }
             
         } catch { 
             self.error = error.localizedDescription 
@@ -923,8 +1449,9 @@ struct RecordingView: View {
                 try di.audio.pauseRecording()
                 isRecording = false
                 
-                // Pause transcription if active
-                if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl, transcriptEnabled {
+                // Pause transcription if active and toggle is enabled
+                if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl, 
+                   transcriptEnabled && settings.isLiveTranscriptionEnabled {
                     unifiedService.disableTranscription()
                     liveTranscriptActive = false
                 }
@@ -940,8 +1467,9 @@ struct RecordingView: View {
                     try di.audio.resumeRecording()
                     isRecording = true
                     
-                    // Resume transcription if it was enabled
-                    if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl, transcriptEnabled {
+                    // Resume transcription if it was enabled and toggle is still on
+                    if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl, 
+                       transcriptEnabled && settings.isLiveTranscriptionEnabled {
                         try await unifiedService.enableTranscription()
                         liveTranscriptActive = true
                         // Re-establish callback after resume
@@ -963,8 +1491,10 @@ struct RecordingView: View {
             isRecording = false
             stopTimers()
             
-            // Stop notification updates
-            di.notifications.stopRecordingNotifications()
+            // Stop notification updates if enabled
+            if settings.showRecordingNotifications {
+                di.notifications.stopRecordingNotifications()
+            }
             
             // Clean up transcription if active
             if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
@@ -994,8 +1524,10 @@ struct RecordingView: View {
             isRecording = false
             stopTimers()
             
-            // Stop notification updates
-            di.notifications.stopRecordingNotifications()
+            // Stop notification updates if enabled
+            if settings.showRecordingNotifications {
+                di.notifications.stopRecordingNotifications()
+            }
             
             // Clean up transcription if active
             if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
@@ -1029,8 +1561,10 @@ struct RecordingView: View {
             
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             NotificationCenter.default.post(name: .didSaveRecording, object: nil)
-            // Stop notification updates
-            di.notifications.showRecordingSuccessNotification()
+            // Show success notification if enabled
+            if settings.showRecordingNotifications {
+                di.notifications.showRecordingSuccessNotification()
+            }
             showSavePopup = false
             onSave?(); dismiss()
         } catch {
@@ -1041,12 +1575,69 @@ struct RecordingView: View {
 
     func startTimers() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
-            if isRecording { elapsed += 0.01 }
+            // Always update elapsed time from audio service (handles paused time correctly)
+            if di.audio.isSessionActive {
+                elapsed = di.audio.currentTime
+                
+                // Check duration limit for free users (only when actively recording)
+                if isRecording && !di.subscription.isPremium {
+                    if let maxDuration = di.featureManager.getMaxRecordingDuration() {
+                        // Show warning in last 60 seconds
+                        durationLimitWarning = elapsed >= (maxDuration - 60)
+                        
+                        // Auto-stop when limit reached
+                        if elapsed >= maxDuration {
+                            Task { @MainActor in
+                                await stopAndShowLimitReached()
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     func stopTimers() {
         timer?.invalidate(); timer = nil
+    }
+    
+    /// Stop recording when duration limit is reached and show upgrade prompt
+    func stopAndShowLimitReached() async {
+        do {
+            isSaving = true
+            let duration = try di.audio.stopRecording()
+            isRecording = false
+            stopTimers()
+            durationLimitWarning = false
+            
+            // Stop notification updates if enabled
+            if settings.showRecordingNotifications {
+                di.notifications.stopRecordingNotifications()
+            }
+            
+            // Clean up transcription if active
+            if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+                unifiedService.disableTranscription()
+            }
+            transcriptEnabled = false
+            liveTranscriptActive = false
+            
+            lastDuration = duration
+            isSaving = false
+            
+            // Show paywall for duration limit
+            showPaywall = true
+            
+            // Show save popup after duration limit reached
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.isSaving = false
+                self.showSavePopup = true
+            }
+            
+        } catch {
+            isSaving = false
+            self.error = error.localizedDescription
+        }
     }
     
     // MARK: - Interruption Handling
@@ -1130,8 +1721,8 @@ struct RecordingView: View {
             startTimers()
         }
         
-        // Resume notification updates
-        if isRecording {
+        // Resume notification updates if enabled
+        if isRecording && settings.showRecordingNotifications {
             di.notifications.startRecordingNotifications(title: "Recording Resumed")
         }
         

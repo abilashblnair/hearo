@@ -104,7 +104,13 @@ final class AVAudioRecordingServiceImpl: NSObject, AudioRecordingService, AVAudi
 
     // Add method to safely deactivate session when all audio work is done
     func deactivateSessionIfNeeded() {
+        // Don't deactivate if there's an active recorder or recording in progress
         guard recorder == nil && !isRecording else { return }
+        
+        // Don't deactivate if there's a paused recording session that can be resumed
+        // In the legacy service, if recorder exists but isn't recording, it might be paused
+        guard !isSessionActive else { return }
+        
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setActive(false, options: .notifyOthersOnDeactivation)

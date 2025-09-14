@@ -3,7 +3,10 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @EnvironmentObject var di: ServiceContainer
     @StateObject private var settings = SettingsService.shared
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
     
+    // MARK: - Paywall State
+    @State private var showPaywall = false
 
     var body: some View {
         NavigationStack {
@@ -37,6 +40,11 @@ struct GeneralSettingsView: View {
             .navigationBarTitleDisplayMode(.large)
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
+        .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
+            SubscriptionSuccessView()
+                .environmentObject(subscriptionManager)
+        }
     }
 
     @ViewBuilder
@@ -45,10 +53,9 @@ struct GeneralSettingsView: View {
             folderManagementToggle
             liveTranscriptionToggle
             recordingNotificationsToggle
-            audioQualityPicker
         }
     }
-
+    
     @ViewBuilder
     private func sectionHeader(_ title: String) -> some View {
         if UIDevice.current.userInterfaceIdiom == .pad {
@@ -90,91 +97,68 @@ struct GeneralSettingsView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color(.systemBackground))
-                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                        .stroke(Color(.separator), lineWidth: 0.5)
                 )
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
             }
             .buttonStyle(PlainButtonStyle())
         } else {
             Button(action: action) {
                 Label(title, systemImage: icon)
-                    .foregroundColor(.primary)
             }
         }
     }
 
-    @ViewBuilder
-    private var appVersionRow: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack(spacing: 16) {
-                Image(systemName: "app.badge")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-                    .frame(width: 30)
-
-                Text("App Version")
-                    .font(.body)
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-        } else {
-            HStack {
-                Label("App Version", systemImage: "app.badge")
-                Spacer()
-                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-    
-    // MARK: - Recording Settings Views
+    // MARK: - Folder Management
     
     @ViewBuilder
     private var folderManagementToggle: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack(spacing: 16) {
+        HStack {
+            if UIDevice.current.userInterfaceIdiom == .pad {
                 Image(systemName: "folder.fill")
-                    .font(.title2)
                     .foregroundColor(.blue)
                     .frame(width: 30)
-
+                
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Folder Management")
-                        .font(.body)
-                        .foregroundColor(.primary)
+                    HStack {
+                        Text("Folder Management")
+                            .fontWeight(.medium)
+                        if !di.subscription.isPremium {
+                            Text("PREMIUM")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange)
+                                .cornerRadius(4)
+                        }
+                    }
                     Text("Organize recordings in folders")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
+                
                 Spacer()
-
-                Toggle("", isOn: $settings.isFolderManagementEnabled)
+                
+                Toggle("", isOn: folderManagementBinding)
                     .labelsHidden()
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-        } else {
-            HStack {
+            } else {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Folder Management")
+                        HStack {
+                            Text("Folder Management")
+                            if !di.subscription.isPremium {
+                                Text("PREMIUM")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange)
+                                    .cornerRadius(4)
+                            }
+                        }
                         Text("Organize recordings in folders")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -186,7 +170,7 @@ struct GeneralSettingsView: View {
                 
                 Spacer()
                 
-                Toggle("", isOn: $settings.isFolderManagementEnabled)
+                Toggle("", isOn: folderManagementBinding)
                     .labelsHidden()
             }
         }
@@ -194,46 +178,35 @@ struct GeneralSettingsView: View {
     
     @ViewBuilder
     private var liveTranscriptionToggle: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack(spacing: 16) {
-                Image(systemName: "text.bubble")
-                    .font(.title2)
-                    .foregroundColor(.green)
+        HStack {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Image(systemName: "captions.bubble.fill")
+                    .foregroundColor(.purple)
                     .frame(width: 30)
-
+                
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Live Transcription")
-                        .font(.body)
-                        .foregroundColor(.primary)
-                    Text("Real-time speech-to-text during recording")
+                        .fontWeight(.medium)
+                    Text("Real-time speech-to-text while recording")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
+                
                 Spacer()
-
+                
                 Toggle("", isOn: $settings.isLiveTranscriptionEnabled)
                     .labelsHidden()
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-        } else {
-            HStack {
+            } else {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Live Transcription")
-                        Text("Real-time speech-to-text during recording")
+                        Text("Real-time speech-to-text while recording")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    Image(systemName: "text.bubble")
-                        .foregroundColor(.green)
+                    Image(systemName: "captions.bubble.fill")
+                        .foregroundColor(.purple)
                 }
                 
                 Spacer()
@@ -246,45 +219,34 @@ struct GeneralSettingsView: View {
     
     @ViewBuilder
     private var recordingNotificationsToggle: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack(spacing: 16) {
-                Image(systemName: "bell")
-                    .font(.title2)
+        HStack {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Image(systemName: "bell.fill")
                     .foregroundColor(.orange)
                     .frame(width: 30)
-
+                
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Recording Notifications")
-                        .font(.body)
-                        .foregroundColor(.primary)
-                    Text("Show alerts when recording starts/stops")
+                        .fontWeight(.medium)
+                    Text("Show notifications during recording")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
+                
                 Spacer()
-
+                
                 Toggle("", isOn: $settings.showRecordingNotifications)
                     .labelsHidden()
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-        } else {
-            HStack {
+            } else {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Recording Notifications")
-                        Text("Show alerts when recording starts/stops")
+                        Text("Show notifications during recording")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    Image(systemName: "bell")
+                    Image(systemName: "bell.fill")
                         .foregroundColor(.orange)
                 }
                 
@@ -296,70 +258,26 @@ struct GeneralSettingsView: View {
         }
     }
     
-    @ViewBuilder
-    private var audioQualityPicker: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            HStack(spacing: 16) {
-                Image(systemName: "waveform")
-                    .font(.title2)
-                    .foregroundColor(.purple)
-                    .frame(width: 30)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Audio Quality")
-                        .font(.body)
-                        .foregroundColor(.primary)
-                    Text(settings.audioQuality.displayName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+    
+    // MARK: - Computed Properties
+    
+    private var folderManagementBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { 
+                // If premium, return actual setting value
+                // If not premium, return false (disabled)
+                di.subscription.isPremium ? settings.isFolderManagementEnabled : false
+            },
+            set: { newValue in
+                // Check if user can manage folders
+                let canManage = di.featureManager.canManageFolders()
+                if canManage.allowed {
+                    settings.isFolderManagementEnabled = newValue
+                } else {
+                    // Show paywall for non-premium users
+                    showPaywall = true
                 }
-
-                Spacer()
-
-                Menu(settings.audioQuality.displayName) {
-                    ForEach(AudioQuality.allCases) { quality in
-                        Button(quality.displayName) {
-                            settings.audioQuality = quality
-                        }
-                    }
-                }
-                .foregroundColor(.blue)
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            )
-        } else {
-            HStack {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Audio Quality")
-                        Text(settings.audioQuality.description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "waveform")
-                        .foregroundColor(.purple)
-                }
-                
-                Spacer()
-                
-                Menu(settings.audioQuality.displayName) {
-                    ForEach(AudioQuality.allCases) { quality in
-                        Button(quality.displayName) {
-                            settings.audioQuality = quality
-                        }
-                    }
-                }
-                .foregroundColor(.blue)
-            }
-        }
+        )
     }
-
 }
-
-

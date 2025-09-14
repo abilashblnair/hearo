@@ -2,9 +2,14 @@ import SwiftUI
 
 struct LanguageSelectionView: View {
     @StateObject private var languageManager = LanguageManager()
+    @StateObject private var featureManager = FeatureManager.shared
+    @StateObject private var subscriptionService = SubscriptionService.shared
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
     @State private var searchText = ""
     @State private var selectedLanguage: Language?
     @State private var animateSelection = false
+    @State private var showPremiumAlert = false
+    @State private var showPaywall = false
     @Environment(\.dismiss) private var dismiss
 
     let onLanguageSelected: (Language) -> Void
@@ -44,6 +49,19 @@ struct LanguageSelectionView: View {
             .toolbar {
                 // Removed Cancel button
             }
+            .alert("Premium Language", isPresented: $showPremiumAlert) {
+                Button("Upgrade to Premium") {
+                    showPaywall = true
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This language requires a Premium subscription. Upgrade to access all languages and premium features.")
+            }
+            .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
+            .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
+                SubscriptionSuccessView()
+                    .environmentObject(subscriptionManager)
+            }
         } else {
             // iPhone layout
             VStack(spacing: 0) {
@@ -62,6 +80,19 @@ struct LanguageSelectionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // Removed Cancel button
+            }
+            .alert("Premium Language", isPresented: $showPremiumAlert) {
+                Button("Upgrade to Premium") {
+                    showPaywall = true
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This language requires a Premium subscription. Upgrade to access all languages and premium features.")
+            }
+            .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
+            .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
+                SubscriptionSuccessView()
+                    .environmentObject(subscriptionManager)
             }
         }
     }
@@ -276,6 +307,12 @@ struct LanguageSelectionView: View {
     // MARK: - Actions
 
     private func selectLanguage(_ language: Language) {
+        // Check if language is accessible
+        if !language.isAccessible(with: featureManager) {
+            showPremiumAlert = true
+            return
+        }
+        
         selectedLanguage = language
         
         // Haptic feedback
@@ -301,25 +338,60 @@ struct PopularLanguageCard: View {
     let language: Language
     let isSelected: Bool
     let onTap: () -> Void
+    
+    @StateObject private var featureManager = FeatureManager.shared
 
     var body: some View {
+        let isAccessible = language.isAccessible(with: featureManager)
+        
         Button(action: onTap) {
             VStack(spacing: 12) {
-                // Flag
-                Text(language.flag)
-                    .font(.system(size: 36))
+                // Flag with premium overlay
+                ZStack {
+                    Text(language.flag)
+                        .font(.system(size: 36))
+                        .opacity(isAccessible ? 1.0 : 0.6)
+                    
+                    if language.isPremium && !isAccessible {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.orange)
+                                    .background(
+                                        Circle()
+                                            .fill(.white)
+                                            .frame(width: 18, height: 18)
+                                    )
+                            }
+                            Spacer()
+                        }
+                        .padding(4)
+                    }
+                }
 
                 // Language Name
                 VStack(spacing: 2) {
                     Text(language.name)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(isAccessible ? .primary : .secondary)
                         .lineLimit(1)
 
                     Text(language.nativeName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+                    
+                    if language.isPremium && !isAccessible {
+                        Text("Premium")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .cornerRadius(4)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -350,31 +422,58 @@ struct RegularLanguageCard: View {
     let language: Language
     let isSelected: Bool
     let onTap: () -> Void
+    
+    @StateObject private var featureManager = FeatureManager.shared
 
     var body: some View {
+        let isAccessible = language.isAccessible(with: featureManager)
+        
         Button(action: onTap) {
             HStack(spacing: 16) {
                 // Flag
                 Text(language.flag)
                     .font(.system(size: 24))
+                    .opacity(isAccessible ? 1.0 : 0.6)
 
                 // Language Info
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(language.name)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.primary)
+                    HStack(spacing: 6) {
+                        Text(language.name)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(isAccessible ? .primary : .secondary)
+                        
+                        if language.isPremium && !isAccessible {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.orange)
+                        }
+                    }
 
                     if language.name != language.nativeName {
                         Text(language.nativeName)
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.secondary)
                     }
+                    
+                    if language.isPremium && !isAccessible {
+                        Text("Premium required")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.orange)
+                    }
                 }
 
                 Spacer()
 
-                // Selection Indicator
-                if isSelected {
+                // Premium indicator or Selection Indicator
+                if language.isPremium && !isAccessible {
+                    Text("Premium")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(6)
+                } else if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.accentColor)
                         .font(.system(size: 20))

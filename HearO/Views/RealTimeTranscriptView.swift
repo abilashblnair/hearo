@@ -1,5 +1,6 @@
 import SwiftUI
 import Speech
+import UIKit
 
 struct RealTimeTranscriptView: View {
     @Environment(\.dismiss) private var dismiss
@@ -56,11 +57,26 @@ struct RealTimeTranscriptView: View {
                                     
                                     // Error message
                                     if let errorMessage = errorMessage {
-                                        Text(errorMessage)
-                                            .foregroundColor(.red)
-                                            .padding()
-                                            .background(Color.red.opacity(0.1))
-                                            .cornerRadius(8)
+                                        VStack(spacing: 8) {
+                                            Text(errorMessage)
+                                                .foregroundColor(.red)
+                                                .padding()
+                                                .background(Color.red.opacity(0.1))
+                                                .cornerRadius(8)
+                                            
+                                            if errorMessage.lowercased().contains("permission") {
+                                                Button("Go to Settings") {
+                                                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                                                        UIApplication.shared.open(settingsUrl)
+                                                    }
+                                                }
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 8)
+                                                .background(Color.orange)
+                                                .foregroundColor(.white)
+                                                .cornerRadius(8)
+                                            }
+                                        }
                                     }
 
                                     // Transcript display
@@ -121,11 +137,26 @@ struct RealTimeTranscriptView: View {
                             
                             // Error message
                             if let errorMessage = errorMessage {
-                                Text(errorMessage)
-                                    .foregroundColor(.red)
-                                    .padding()
-                                    .background(Color.red.opacity(0.1))
-                                    .cornerRadius(8)
+                                VStack(spacing: 8) {
+                                    Text(errorMessage)
+                                        .foregroundColor(.red)
+                                        .padding()
+                                        .background(Color.red.opacity(0.1))
+                                        .cornerRadius(8)
+                                    
+                                    if errorMessage.lowercased().contains("permission") {
+                                        Button("Go to Settings") {
+                                            if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                                                UIApplication.shared.open(settingsUrl)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.orange)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(8)
+                                    }
+                                }
                             }
 
                             // Transcript display

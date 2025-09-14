@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 struct AAIStreamingTranscriptView: View {
     @Environment(\.dismiss) private var dismiss
@@ -36,7 +37,24 @@ struct AAIStreamingTranscriptView: View {
                                     .padding()
                             }
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
-                            if let errorMessage { Text(errorMessage).foregroundColor(.red).font(.footnote) }
+                            if let errorMessage { 
+                                VStack(spacing: 8) {
+                                    Text(errorMessage).foregroundColor(.red).font(.footnote)
+                                    
+                                    if errorMessage.lowercased().contains("permission") || !isAuthorized {
+                                        Button("Go to Settings") {
+                                            if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                                                UIApplication.shared.open(settingsUrl)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.orange)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(8)
+                                    }
+                                }
+                            }
                             Spacer()
                         }
                         .padding(24)
@@ -54,7 +72,24 @@ struct AAIStreamingTranscriptView: View {
                             .padding()
                     }
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
-                    if let errorMessage { Text(errorMessage).foregroundColor(.red).font(.footnote) }
+                    if let errorMessage { 
+                        VStack(spacing: 8) {
+                            Text(errorMessage).foregroundColor(.red).font(.footnote)
+                            
+                            if errorMessage.lowercased().contains("permission") || !isAuthorized {
+                                Button("Go to Settings") {
+                                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                                        UIApplication.shared.open(settingsUrl)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.orange)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
                     Spacer()
                 }
                 .padding(16)

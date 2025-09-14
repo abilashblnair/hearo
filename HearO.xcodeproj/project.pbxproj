@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0534F9182E728C4B004889CC /* Adapty in Frameworks */ = {isa = PBXBuildFile; productRef = 0534F9172E728C4B004889CC /* Adapty */; };
+		0534F91A2E728C4B004889CC /* AdaptyUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0534F9192E728C4B004889CC /* AdaptyUI */; };
 		0570BB3F2E54CA5900119E06 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 0570BB3E2E54CA5900119E06 /* GoogleMobileAds */; };
 /* End PBXBuildFile section */
 
@@ -40,7 +42,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0534F91A2E728C4B004889CC /* AdaptyUI in Frameworks */,
 				0570BB3F2E54CA5900119E06 /* GoogleMobileAds in Frameworks */,
+				0534F9182E728C4B004889CC /* Adapty in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +88,8 @@
 			name = HearO;
 			packageProductDependencies = (
 				0570BB3E2E54CA5900119E06 /* GoogleMobileAds */,
+				0534F9172E728C4B004889CC /* Adapty */,
+				0534F9192E728C4B004889CC /* AdaptyUI */,
 			);
 			productName = HearO;
 			productReference = 05C68BA12E4B885F00495B2F /* HearO.app */;
@@ -115,6 +121,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				0570BB3D2E54CA5900119E06 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+				0534F9162E728C4B004889CC /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 05C68BA22E4B885F00495B2F /* Products */;
@@ -293,7 +300,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaryea.HearO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -330,7 +337,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaryea.HearO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -366,6 +373,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		0534F9162E728C4B004889CC /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/adaptyteam/AdaptySDK-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.11.0;
+			};
+		};
 		0570BB3D2E54CA5900119E06 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads";
@@ -377,6 +392,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0534F9172E728C4B004889CC /* Adapty */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0534F9162E728C4B004889CC /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */;
+			productName = Adapty;
+		};
+		0534F9192E728C4B004889CC /* AdaptyUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0534F9162E728C4B004889CC /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */;
+			productName = AdaptyUI;
+		};
 		0570BB3E2E54CA5900119E06 /* GoogleMobileAds */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0570BB3D2E54CA5900119E06 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;

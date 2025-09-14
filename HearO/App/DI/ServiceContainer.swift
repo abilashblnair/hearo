@@ -11,6 +11,8 @@ final class ServiceContainer: ObservableObject {
     let adManager: AdManagerProtocol
     let notifications: LocalNotificationService
     let settings: SettingsService
+    let subscription: SubscriptionService
+    let featureManager: FeatureManager
     
     init(audio: AudioRecordingService,
          transcription: TranscriptionService,
@@ -21,7 +23,9 @@ final class ServiceContainer: ObservableObject {
          tts: GoogleCloudTTSManager,
          adManager: AdManagerProtocol,
          notifications: LocalNotificationService,
-         settings: SettingsService) {
+         settings: SettingsService,
+         subscription: SubscriptionService,
+         featureManager: FeatureManager) {
         self.audio = audio
         self.transcription = transcription
         self.summarization = summarization
@@ -32,6 +36,8 @@ final class ServiceContainer: ObservableObject {
         self.adManager = adManager
         self.notifications = notifications
         self.settings = settings
+        self.subscription = subscription
+        self.featureManager = featureManager
     }
     
     /// Factory method to create default services with proper configuration
@@ -50,7 +56,9 @@ final class ServiceContainer: ObservableObject {
             tts: GoogleCloudTTSManager.shared,
             adManager: adManager,
             notifications: LocalNotificationService.shared,
-            settings: SettingsService.shared
+            settings: SettingsService.shared,
+            subscription: SubscriptionService.shared,
+            featureManager: FeatureManager.shared
         )
     }
 }

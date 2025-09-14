@@ -122,6 +122,13 @@ struct TranscriptResultView: View {
                 // Reset navigation state and handle translation
                 Task { @MainActor in
                     navigateToLanguageSelection = false
+                    
+                    // Validate language access before translation
+                    if !di.featureManager.hasAccessToLanguage(language.languageCode) {
+                        showError("Translation to \(language.name) requires a Premium subscription. Upgrade to access all languages.")
+                        return
+                    }
+                    
                     await translateTranscript(to: language.name)
                 }
             }
@@ -633,8 +640,8 @@ struct TranscriptResultView: View {
         
         summaryGenerationCount += 1
         
-        // Randomly show ad for summary generation (1 in 3 chance after 2nd attempt)
-        if summaryGenerationCount >= 2 && Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+        // Show ads only for free users - randomly show ad for summary generation (1 in 3 chance after 2nd attempt)
+        if di.featureManager.shouldShowAds() && summaryGenerationCount >= 2 && Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
             di.adManager.presentInterstitial(from: rootVC) { _ in
                 Task {
                     await self.generatingSummaryPostOtherProcess(segments)
@@ -684,8 +691,8 @@ struct TranscriptResultView: View {
         
         translationAttemptCount += 1
         
-        // Randomly show ad for translation (1 in 3 chance after 2nd attempt)
-        if translationAttemptCount >= 2 && Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+        // Show ads only for free users - randomly show ad for translation (1 in 3 chance after 2nd attempt)
+        if di.featureManager.shouldShowAds() && translationAttemptCount >= 2 && Int.random(in: 1...3) == 1, di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
             di.adManager.presentInterstitial(from: rootVC) { _ in
                 Task {
                     await self.translateTranscriptPostOtherProcess(segments, targetLanguage)

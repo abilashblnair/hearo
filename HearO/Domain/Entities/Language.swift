@@ -13,6 +13,7 @@ struct Language: Codable, Identifiable, Hashable {
     let googleTTSVoice: String? // Google TTS voice name
     let category: String
     let isPopular: Bool
+    let isPremium: Bool // Whether this language requires premium access
     
     var displayName: String {
         if name == nativeName {
@@ -25,15 +26,29 @@ struct Language: Codable, Identifiable, Hashable {
     var locale: Locale {
         return Locale(identifier: localeIdentifier)
     }
+    
+    /// Check if this language is accessible for the current user based on subscription status
+    func isAccessible(isPremium: Bool) -> Bool {
+        return !self.isPremium || isPremium
+    }
+    
+    /// Check if this language is accessible using FeatureManager
+    @MainActor
+    func isAccessible(with featureManager: FeatureManager) -> Bool {
+        return featureManager.hasAccessToLanguage(languageCode)
+    }
 }
 
 struct LanguagesResponse: Codable {
     let languages: [Language]
 }
 
+@MainActor
 final class LanguageManager: ObservableObject {
     @Published var languages: [Language] = []
     @Published var isLoading = false
+    
+    private let featureManager = FeatureManager.shared
     
     init() {
         loadLanguages()
@@ -97,5 +112,26 @@ final class LanguageManager: ObservableObject {
             language.nativeName.lowercased().contains(lowercasedQuery) ||
             language.languageCode.lowercased().contains(lowercasedQuery)
         }
+    }
+    
+    /// Get languages filtered by accessibility based on current subscription status
+    var accessibleLanguages: [Language] {
+        return languages.filter { $0.isAccessible(with: featureManager) }
+    }
+    
+    /// Get premium languages that are not accessible to free users
+    var premiumLanguages: [Language] {
+        return languages.filter { $0.isPremium && !$0.isAccessible(with: featureManager) }
+    }
+    
+    /// Get popular languages filtered by accessibility
+    var accessiblePopularLanguages: [Language] {
+        return languages.filter { $0.isPopular && $0.isAccessible(with: featureManager) }
+    }
+    
+    /// Get grouped languages with accessibility filtering
+    var accessibleGroupedLanguages: [String: [Language]] {
+        let accessibleLangs = accessibleLanguages
+        return Dictionary(grouping: accessibleLangs) { $0.category }
     }
 }

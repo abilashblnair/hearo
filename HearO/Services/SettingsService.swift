@@ -27,12 +27,6 @@ final class SettingsService: ObservableObject {
         }
     }
     
-    /// Audio quality setting
-    @Published var audioQuality: AudioQuality {
-        didSet {
-            UserDefaults.standard.set(audioQuality.rawValue, forKey: SettingsKeys.audioQuality)
-        }
-    }
     
     // MARK: - Initialization
     
@@ -42,8 +36,6 @@ final class SettingsService: ObservableObject {
         self.isLiveTranscriptionEnabled = UserDefaults.standard.object(forKey: SettingsKeys.liveTranscriptionEnabled) as? Bool ?? false
         self.showRecordingNotifications = UserDefaults.standard.object(forKey: SettingsKeys.recordingNotifications) as? Bool ?? true
         
-        let qualityRawValue = UserDefaults.standard.string(forKey: SettingsKeys.audioQuality) ?? AudioQuality.high.rawValue
-        self.audioQuality = AudioQuality(rawValue: qualityRawValue) ?? .high
     }
     
     // MARK: - Methods
@@ -52,7 +44,6 @@ final class SettingsService: ObservableObject {
         isFolderManagementEnabled = true
         isLiveTranscriptionEnabled = false
         showRecordingNotifications = true
-        audioQuality = .high
     }
 }
 
@@ -62,36 +53,4 @@ private enum SettingsKeys {
     static let folderManagementEnabled = "folderManagementEnabled"
     static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
     static let recordingNotifications = "recordingNotifications"
-    static let audioQuality = "audioQuality"
 }
-
-// MARK: - Audio Quality Enum
-
-enum AudioQuality: String, CaseIterable, Identifiable {
-    case low = "low"
-    case medium = "medium"
-    case high = "high"
-    case lossless = "lossless"
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .low: return "Low (32 kbps)"
-        case .medium: return "Medium (128 kbps)"
-        case .high: return "High (256 kbps)"
-        case .lossless: return "Lossless (ALAC)"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .low: return "Smallest file size, basic quality"
-        case .medium: return "Good balance of size and quality"
-        case .high: return "High quality, recommended"
-        case .lossless: return "Maximum quality, large files"
-        }
-    }
-}
-
-

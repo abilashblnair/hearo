@@ -7,6 +7,7 @@ struct SummaryView: View {
     let onSeekToTimestamp: (TimeInterval) -> Void
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var di: ServiceContainer
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
     @State private var selectedSection: SummarySection = .overview
     @State private var isSharing = false
     @State private var expandedActionItems: Set<UUID> = []
@@ -18,6 +19,7 @@ struct SummaryView: View {
     @State private var pdfError: String?
     @State private var showingPDFError = false
     @State private var showingCopySuccess = false
+    @State private var showPaywall = false
 
     enum SummarySection: String, CaseIterable {
         case overview = "Overview"
@@ -138,6 +140,14 @@ struct SummaryView: View {
                                     // Export PDF Button
                                     Button(action: {
                                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        
+                                        // Check premium access for export
+                                        let exportCheck = di.featureManager.canExport()
+                                        if !exportCheck.allowed {
+                                            showPaywall = true
+                                            return
+                                        }
+                                        
                                         Task {
                                             await generatePDF()
                                         }
@@ -251,6 +261,14 @@ struct SummaryView: View {
                         // Export PDF Button
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            
+                            // Check premium access for export
+                            let exportCheck = di.featureManager.canExport()
+                            if !exportCheck.allowed {
+                                showPaywall = true
+                                return
+                            }
+                            
                             Task {
                                 await generatePDF()
                             }
@@ -295,6 +313,11 @@ struct SummaryView: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
             }
+        }
+        .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
+        .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
+            SubscriptionSuccessView()
+                .environmentObject(subscriptionManager)
         }
         .onAppear {
             withAnimation {
@@ -565,7 +588,8 @@ struct SummaryView: View {
     private func generatePDF() async {
         isGeneratingPDF = true
 
-        if di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+        // Show ads only for free users
+        if di.featureManager.shouldShowAds() && di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
             di.adManager.presentInterstitial(from: rootVC) { _ in
                 generatingPDFPostAllProcess()
             }
@@ -695,7 +719,8 @@ struct SummaryView: View {
     
     @MainActor
     private func copySummaryToClipboard() async {
-        if di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+        // Show ads only for free users
+        if di.featureManager.shouldShowAds() && di.adManager.isAdReady, let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
             di.adManager.presentInterstitial(from: rootVC) { _ in
                 copySummaryPostAllProcess()
             }

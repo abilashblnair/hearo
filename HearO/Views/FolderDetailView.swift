@@ -7,7 +7,8 @@ struct FolderDetailView: View {
     let folder: RecordingFolder
     @EnvironmentObject var di: ServiceContainer
     @Environment(\.modelContext) private var modelContext
-    @Binding var showRecordingSheet: Bool
+    let onStartRecording: () -> Void
+    let onExpandRecording: () -> Void
     @Binding var navigateToTranscript: Bool
     @Binding var currentTranscriptSession: Session?
     @Binding var currentTranscriptRecording: Recording?
@@ -42,9 +43,14 @@ struct FolderDetailView: View {
     @State private var transcribingRecordingID: UUID? = nil
     @State private var transcribeError: String? = nil
     
+    
     // Folder management state
     @State private var showingEditFolder: Bool = false
     @State private var showingDeleteFolderAlert: Bool = false
+    
+    // Retention policy state
+    @State private var showingRetentionAlert = false
+    @State private var selectedRecordingForRetention: Recording? = nil
     
     // Mini recorder state
     @State private var recElapsed: TimeInterval = 0
@@ -103,7 +109,7 @@ struct FolderDetailView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("Start Recording", systemImage: "record.circle.fill") {
-                        showRecordingSheet = true
+                        onStartRecording()
                     }
                     
                     if !recordings.isEmpty {
@@ -158,11 +164,6 @@ struct FolderDetailView: View {
                 recElapsed = di.audio.currentTime
             }
         }
-        .onChange(of: showRecordingSheet) { oldValue, newValue in
-            if oldValue == true && newValue == false, di.audio.isSessionActive {
-                recElapsed = di.audio.currentTime
-            }
-        }
         .overlay(alignment: .bottom) {
             if di.audio.isSessionActive { 
                 miniBar.padding(.horizontal) 
@@ -211,6 +212,25 @@ struct FolderDetailView: View {
             }
         } message: {
             Text("This will permanently delete the folder '\(folder.name)' and move all recordings to the default folder. This action cannot be undone.")
+        }
+        .alert("Recording Will Be Deleted", isPresented: $showingRetentionAlert) {
+            Button("Upgrade to Premium") {
+                showPaywallForRetentionWarning()
+            }
+            Button("OK", role: .cancel) {
+                selectedRecordingForRetention = nil
+            }
+        } message: {
+            if let recording = selectedRecordingForRetention {
+                let daysRemaining = getDaysUntilDeletion(for: recording)
+                if daysRemaining <= 0 {
+                    Text("This recording will be automatically deleted soon as it's older than 7 days. Upgrade to Premium to keep all your recordings forever!")
+                } else {
+                    Text("This recording will be automatically deleted in \(daysRemaining) day\(daysRemaining == 1 ? "" : "s"). Upgrade to Premium to keep all your recordings forever!")
+                }
+            } else {
+                Text("Free users can only keep recordings for 7 days. Upgrade to Premium for unlimited history!")
+            }
         }
     }
     
@@ -302,7 +322,7 @@ struct FolderDetailView: View {
                 } description: {
                     Text("Start recording to add your first clip to \"\(folder.name)\".")
                 } actions: {
-                    Button("Start Recording") { showRecordingSheet = true }
+                    Button("Start Recording") { onStartRecording() }
                 }
                 .padding()
             }
@@ -342,7 +362,14 @@ struct FolderDetailView: View {
                 
                 // Recording info
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(rec.title).font(.body)
+                    HStack {
+                        Text(rec.title).font(.body)
+                        Spacer()
+                        // Retention badge for free users
+                        if !di.subscription.isPremium {
+                            retentionBadge(for: rec)
+                        }
+                    }
                     Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -589,7 +616,7 @@ struct FolderDetailView: View {
 
             if miniCollapsed == false {
                 // Left tappable area re-opens full RecordingView
-                Button(action: { showRecordingSheet = true }) {
+                Button(action: { onExpandRecording() }) {
                     HStack(spacing: 12) {
                         Circle().fill(getStatusColor())
                             .frame(width: 10, height: 10)
@@ -612,7 +639,7 @@ struct FolderDetailView: View {
                 .buttonStyle(.plain)
             } else {
                 // Collapsed compact clock view
-                Button(action: { showRecordingSheet = true }) {
+                Button(action: { onExpandRecording() }) {
                     Text(format(duration: recElapsed))
                         .font(.headline.monospacedDigit())
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -637,6 +664,8 @@ struct FolderDetailView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator), lineWidth: 0.5))
     }
+    
+    // MARK: - Recording Control Functions
     
     // MARK: - Actions and Helper Methods (Similar to RecordListView)
     
@@ -684,16 +713,207 @@ struct FolderDetailView: View {
         return String(format: "%02d:%02d", m, s)
     }
     
-    // MARK: - Placeholder methods (copy from RecordListView)
-    private func togglePlayback(for rec: Recording) { /* Copy from RecordListView */ }
-    private func transcribeRecording(_ rec: Recording) async { /* Copy from RecordListView */ }
-    private func enterMultiSelectMode() { /* Copy from RecordListView */ }
-    private func exitMultiSelectMode() { /* Copy from RecordListView */ }
-    private func toggleSelection(for recording: Recording) { /* Copy from RecordListView */ }
-    private func startRename(_ recording: Recording) { /* Copy from RecordListView */ }
-    private func renameCurrentRecording() { /* Copy from RecordListView */ }
-    private func cancelRename() { /* Copy from RecordListView */ }
-    private func shareRecording(_ recording: Recording) { /* Copy from RecordListView */ }
+    // MARK: - Transcription
+    @MainActor
+    private func transcribeRecording(_ rec: Recording) async {
+        isTranscribing = true
+        transcribingRecordingID = rec.id
+        transcribeError = nil
+        currentTranscriptSession = nil
+        currentTranscriptRecording = nil
+        defer {
+            isTranscribing = false
+            transcribingRecordingID = nil
+        }
+
+        do {
+            let segments: [TranscriptSegment]
+            let languageCode = "en"
+
+            // Check if transcript is already cached
+            if rec.hasTranscript, let cachedSegments = rec.getCachedTranscriptSegments() {
+                segments = cachedSegments
+            } else {
+                let audioURL = rec.finalAudioURL()
+                
+                // Additional file existence check
+                guard FileManager.default.fileExists(atPath: audioURL.path) else {
+                    throw NSError(domain: "TranscriptionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Audio file not found"])
+                }
+                
+                segments = try await di.transcription.transcribe(audioURL: audioURL, languageCode: languageCode)
+
+                // Cache the transcript in the Recording model
+                rec.cacheTranscript(segments: segments, language: languageCode)
+
+                // Save to persistent storage
+                try modelContext.save()
+            }
+
+            // Create a temporary Session object for the transcript view
+            currentTranscriptSession = Session(
+                id: rec.id,
+                title: rec.title,
+                createdAt: rec.createdAt,
+                audioURL: rec.finalAudioURL(),
+                duration: rec.duration,
+                languageCode: languageCode,
+                transcript: segments,
+                highlights: nil,
+                summary: nil
+            )
+
+            // Store the recording reference for caching
+            currentTranscriptRecording = rec
+
+            // Pause any playing audio before navigating
+            if let player = player, isPlaying {
+                player.pause()
+                isPlaying = false
+                isSeeking = false
+                setPlaybackSessionActive(false)
+            }
+
+            navigateToTranscript = true
+        } catch {
+            transcribeError = error.localizedDescription
+        }
+    }
+    
+    // MARK: - Playback Controls
+    
+    private func togglePlayback(for rec: Recording) {
+        if playingID == rec.id, let player = player {
+            if isPlaying {
+                player.pause()
+                isPlaying = false
+                setPlaybackSessionActive(false)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } else {
+                setPlaybackSessionActive(true)
+                player.play()
+                isPlaying = true
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+        } else {
+            // Stop any current player and reset state immediately
+            player?.stop()
+            player = nil
+            isPlaying = false
+            playingID = nil
+            playbackTime = 0
+            isSeeking = false
+
+            // Setup new player asynchronously to avoid blocking UI
+            Task { @MainActor in
+                do {
+                    let newPlayer = try AVAudioPlayer(contentsOf: rec.finalAudioURL())
+                    newPlayer.delegate = playerDelegate
+                    newPlayer.prepareToPlay()
+
+                    // Set playback session and start playing
+                    setPlaybackSessionActive(true)
+
+                    if newPlayer.play() {
+                        player = newPlayer
+                        playingID = rec.id
+                        isPlaying = true
+                        playbackTime = 0
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } else {
+                        throw NSError(domain: "PlaybackError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to start playback"])
+                    }
+
+                    // Ensure we deactivate session on finish
+                    playerDelegate.onFinish = {
+                        setPlaybackSessionActive(false)
+                        isPlaying = false
+                        playingID = nil
+                        playbackTime = 0
+                        isSeeking = false
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                } catch {
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    // Reset states on error
+                    isPlaying = false
+                    playingID = nil
+                    player = nil
+                    isSeeking = false
+                }
+            }
+        }
+    }
+    
+    // MARK: - Multi-Selection Management
+    
+    private func enterMultiSelectMode() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isMultiSelectMode = true
+            selectedRecordings.removeAll()
+        }
+    }
+    
+    private func exitMultiSelectMode() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isMultiSelectMode = false
+            selectedRecordings.removeAll()
+        }
+    }
+    
+    private func toggleSelection(for recording: Recording) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if selectedRecordings.contains(recording.id) {
+                selectedRecordings.remove(recording.id)
+            } else {
+                selectedRecordings.insert(recording.id)
+            }
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    // MARK: - Recording Management
+    
+    private func startRename(_ recording: Recording) {
+        renamingRecording = recording
+        newRecordingName = recording.title
+        showingRenameDialog = true
+    }
+    
+    private func renameCurrentRecording() {
+        guard let recording = renamingRecording else { return }
+        let trimmedName = newRecordingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedName.isEmpty {
+            renameRecording(recording, newName: trimmedName)
+        }
+        cancelRename()
+    }
+    
+    private func cancelRename() {
+        renamingRecording = nil
+        newRecordingName = ""
+        showingRenameDialog = false
+    }
+    
+    private func renameRecording(_ recording: Recording, newName: String) {
+        // Update the recording title
+        recording.title = newName
+        
+        // Save to context
+        do {
+            try modelContext.save()
+            // Reload recordings to reflect the change
+            Task { await loadRecordings() }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
+    }
+    private func shareRecording(_ recording: Recording) {
+        let audioURL = recording.finalAudioURL()
+        shareItems = [audioURL]
+        showingShareSheet = true
+    }
     private func shareSelectedRecordings() {
         let selectedRecs = recordings.filter { selectedRecordings.contains($0.id) }
         let shareUrls = selectedRecs.map { $0.finalAudioURL() }
@@ -752,17 +972,270 @@ struct FolderDetailView: View {
         }
     }
     
-    private func delete(at offsets: IndexSet) { /* Copy from RecordListView */ }
-    private func seekToTime(_ time: TimeInterval) { /* Copy from RecordListView */ }
-    private func toggleMiniPauseResume() { /* Copy from RecordListView */ }
-    private func manualResumeMiniRecording() { /* Copy from RecordListView */ }
-    private func stopMiniAndPrompt() { /* Copy from RecordListView */ }
-    private func saveMiniRecording() { /* Copy from RecordListView */ }
+    // MARK: - Additional Helper Methods
+    
+    private func delete(at offsets: IndexSet) {
+        // Stop playback and deactivate session if deleting current item
+        if let currentID = playingID, let idx = offsets.first, recordings.indices.contains(idx), recordings[idx].id == currentID {
+            player?.stop()
+            isPlaying = false
+            playingID = nil
+            isSeeking = false
+            setPlaybackSessionActive(false)
+        }
+        
+        var toDelete: [Recording] = []
+        for index in offsets { 
+            if recordings.indices.contains(index) { 
+                toDelete.append(recordings[index]) 
+            } 
+        }
+        
+        withAnimation { 
+            recordings.remove(atOffsets: offsets) 
+        }
+        
+        let store = RecordingDataStore(context: modelContext)
+        for rec in toDelete {
+            try? FileManager.default.removeItem(at: rec.finalAudioURL())
+            try? store.deleteRecording(rec)
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+    
+    private func seekToTime(_ time: TimeInterval) {
+        guard let player = player else { 
+            return 
+        }
+        
+        let clampedTime = max(0, min(time, player.duration))
+        
+        player.currentTime = clampedTime
+        playbackTime = clampedTime
+        
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    private func toggleMiniPauseResume() {
+        // Check if there are pending resume operations (interruption state)
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl,
+           unifiedService.hasPendingResumeOperations {
+            // Show resume prompt for interrupted recording
+            showMiniResumePrompt = true
+            return
+        }
+        
+        do {
+            if di.audio.isRecording {
+                // Pause only
+                try di.audio.pauseRecording()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } else if di.audio.isSessionActive {
+                // Resume if we still have a session
+                try di.audio.resumeRecording()
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } else {
+                // No session -> need to start fresh recording, check limits
+                onStartRecording()
+            }
+        } catch { 
+            UINotificationFeedbackGenerator().notificationOccurred(.error) 
+        }
+    }
+    
+    private func manualResumeMiniRecording() {
+        if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
+            unifiedService.forceResumeAfterInterruption()
+            
+            // Give a small delay for the audio service to process the resume
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.syncMiniRecorderState()
+            }
+            
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+    }
+    
+    private func syncMiniRecorderState() {
+        guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else { return }
+        
+        // Update elapsed time to trigger UI refresh
+        recElapsed = unifiedService.currentTime
+        
+        // Update prompt state to ensure it's closed after resume
+        showMiniResumePrompt = false
+    }
+
+    private func stopMiniAndPrompt() {
+        do {
+            // Capture URL before stopping, because stop clears the recorder
+            miniURL = di.audio.currentRecordingURL
+            miniLastDuration = try di.audio.stopRecording()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            showMiniSavePrompt = true
+        } catch { 
+            UINotificationFeedbackGenerator().notificationOccurred(.error) 
+        }
+    }
+
+    private func saveMiniRecording() {
+        guard let url = miniURL else { return }
+        let filename = url.deletingPathExtension().lastPathComponent
+        let id = UUID(uuidString: filename) ?? UUID()
+        let title = miniNameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? ("Session " + Date.now.formatted(date: .abbreviated, time: .shortened)) : miniNameText
+        // Store relative path so sandbox container UUID changes don't break playbook
+        let relativePath = "audio/\(id.uuidString).m4a"
+        let rec = Recording(id: id, title: title, createdAt: Date(), audioURL: relativePath, duration: miniLastDuration, notes: nil, folder: folder)
+        
+        do {
+            let folderStore = FolderDataStore(context: modelContext)
+            try folderStore.saveRecording(rec, to: folder)
+            NotificationCenter.default.post(name: .didSaveRecording, object: nil)
+            miniNameText = ""
+            showMiniSavePrompt = false
+            miniURL = nil
+        } catch { 
+            UINotificationFeedbackGenerator().notificationOccurred(.error) 
+        }
+    }
+    
+    // Activate/deactivate playback audio session for reliable speaker output
+    private func setPlaybackSessionActive(_ active: Bool) {
+        // Run session changes on background queue to avoid blocking main thread
+        Task {
+            let session = AVAudioSession.sharedInstance()
+            do {
+                if active {
+                    // Only change category if we're activating and no recording is active
+                    if !di.audio.isSessionActive {
+                        try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                        try session.setActive(true, options: .notifyOthersOnDeactivation)
+                    }
+                } else {
+                    // Don't deactivate if recording session is active
+                    if !di.audio.isSessionActive {
+                        try session.setActive(false, options: .notifyOthersOnDeactivation)
+                    }
+                }
+            } catch {
+            }
+        }
+    }
     private func getStatusColor() -> Color { 
         return di.audio.isRecording ? Color.red : Color.orange
     }
     
     private func getStatusText() -> String { 
         return di.audio.isRecording ? "Recording…" : "Paused"
+    }
+    
+    // MARK: - Retention Policy UI
+    
+    @ViewBuilder
+    private func retentionBadge(for recording: Recording) -> some View {
+        let daysRemaining = getDaysUntilDeletion(for: recording)
+        let isUrgent = daysRemaining <= 3
+        
+        // Always show days remaining for free users
+        Button(action: {
+            if isUrgent {
+                selectedRecordingForRetention = recording
+                showingRetentionAlert = true
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }) {
+            HStack(spacing: 3) {
+                Image(systemName: getBadgeIcon(for: daysRemaining))
+                    .font(.caption2)
+                Text(getBadgeText(for: daysRemaining))
+                    .font(.caption2)
+                    .fontWeight(.medium)
+            }
+            .foregroundColor(getBadgeTextColor(for: daysRemaining))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(getBadgeBackgroundColor(for: daysRemaining))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(getBadgeBorderColor(for: daysRemaining), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isUrgent) // Only tappable when urgent
+    }
+    
+    private func getDaysUntilDeletion(for recording: Recording) -> Int {
+        let daysSinceRecording = Calendar.current.dateComponents([.day], from: recording.createdAt, to: Date()).day ?? 0
+        return max(0, FeatureManager.FreeTierLimits.historyRetentionDays - daysSinceRecording)
+    }
+    
+    // MARK: - Badge Styling Helpers
+    
+    private func getBadgeIcon(for daysRemaining: Int) -> String {
+        switch daysRemaining {
+        case 0:
+            return "exclamationmark.triangle.fill"
+        case 1...3:
+            return "clock.fill"
+        default:
+            return "calendar"
+        }
+    }
+    
+    private func getBadgeText(for daysRemaining: Int) -> String {
+        switch daysRemaining {
+        case 0:
+            return "Expires Today"
+        case 1:
+            return "1 day left"
+        case 2...6:
+            return "\(daysRemaining) days left"
+        case 7:
+            return "New"
+        default:
+            return "\(daysRemaining)d"
+        }
+    }
+    
+    private func getBadgeTextColor(for daysRemaining: Int) -> Color {
+        switch daysRemaining {
+        case 0:
+            return .white
+        case 1...3:
+            return .white
+        default:
+            return .secondary
+        }
+    }
+    
+    private func getBadgeBackgroundColor(for daysRemaining: Int) -> Color {
+        switch daysRemaining {
+        case 0:
+            return .red
+        case 1:
+            return .orange
+        case 2...3:
+            return .yellow
+        default:
+            return Color(.systemGray6)
+        }
+    }
+    
+    private func getBadgeBorderColor(for daysRemaining: Int) -> Color {
+        switch daysRemaining {
+        case 0...3:
+            return .clear
+        default:
+            return Color(.systemGray4)
+        }
+    }
+    
+    private func showPaywallForRetentionWarning() {
+        // Navigate to paywall/subscription view
+        selectedRecordingForRetention = nil
+        // TODO: Integrate with paywall system
+        // This should trigger the paywall presentation
     }
 }

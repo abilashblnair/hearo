@@ -8,11 +8,15 @@
       "countryCode": "US",
       "localeIdentifier": "en-US",
       "flag": "🇺🇸",
-      "ttsVoices": ["com.apple.ttsbundle.Samantha-compact", "com.apple.ttsbundle.Alex-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Samantha-compact",
+        "com.apple.ttsbundle.Alex-compact"
+      ],
       "googleTTSLanguageCode": "en-US",
       "googleTTSVoice": "en-US-Studio-O",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "en-GB",
@@ -22,11 +26,14 @@
       "countryCode": "GB",
       "localeIdentifier": "en-GB",
       "flag": "🇬🇧",
-      "ttsVoices": ["com.apple.ttsbundle.Daniel-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Daniel-compact"
+      ],
       "googleTTSLanguageCode": "en-GB",
       "googleTTSVoice": "en-GB-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "es-ES",
@@ -36,11 +43,14 @@
       "countryCode": "ES",
       "localeIdentifier": "es-ES",
       "flag": "🇪🇸",
-      "ttsVoices": ["com.apple.ttsbundle.Monica-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Monica-compact"
+      ],
       "googleTTSLanguageCode": "es-ES",
       "googleTTSVoice": "es-ES-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "es-MX",
@@ -50,11 +60,14 @@
       "countryCode": "MX",
       "localeIdentifier": "es-MX",
       "flag": "🇲🇽",
-      "ttsVoices": ["com.apple.ttsbundle.Paulina-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Paulina-compact"
+      ],
       "googleTTSLanguageCode": "es-MX",
       "googleTTSVoice": "es-MX-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "es-US",
@@ -64,11 +77,14 @@
       "countryCode": "US",
       "localeIdentifier": "es-US",
       "flag": "🇺🇸",
-      "ttsVoices": ["com.apple.ttsbundle.Jorge-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Jorge-compact"
+      ],
       "googleTTSLanguageCode": "es-US",
       "googleTTSVoice": "es-US-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "fr-FR",
@@ -78,11 +94,14 @@
       "countryCode": "FR",
       "localeIdentifier": "fr-FR",
       "flag": "🇫🇷",
-      "ttsVoices": ["com.apple.ttsbundle.Amelie-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Amelie-compact"
+      ],
       "googleTTSLanguageCode": "fr-FR",
       "googleTTSVoice": "fr-FR-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "fr-CA",
@@ -92,11 +111,14 @@
       "countryCode": "CA",
       "localeIdentifier": "fr-CA",
       "flag": "🇨🇦",
-      "ttsVoices": ["com.apple.ttsbundle.Chantal-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Chantal-compact"
+      ],
       "googleTTSLanguageCode": "fr-CA",
       "googleTTSVoice": "fr-CA-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": false
     },
     {
       "id": "de-DE",
@@ -106,11 +128,14 @@
       "countryCode": "DE",
       "localeIdentifier": "de-DE",
       "flag": "🇩🇪",
-      "ttsVoices": ["com.apple.ttsbundle.Anna-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Anna-compact"
+      ],
       "googleTTSLanguageCode": "de-DE",
       "googleTTSVoice": "de-DE-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "it-IT",
@@ -120,11 +145,14 @@
       "countryCode": "IT",
       "localeIdentifier": "it-IT",
       "flag": "🇮🇹",
-      "ttsVoices": ["com.apple.ttsbundle.Alice-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Alice-compact"
+      ],
       "googleTTSLanguageCode": "it-IT",
       "googleTTSVoice": "it-IT-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "pt-BR",
@@ -134,11 +162,14 @@
       "countryCode": "BR",
       "localeIdentifier": "pt-BR",
       "flag": "🇧🇷",
-      "ttsVoices": ["com.apple.ttsbundle.Luciana-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Luciana-compact"
+      ],
       "googleTTSLanguageCode": "pt-BR",
       "googleTTSVoice": "pt-BR-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "pt-PT",
@@ -148,11 +179,14 @@
       "countryCode": "PT",
       "localeIdentifier": "pt-PT",
       "flag": "🇵🇹",
-      "ttsVoices": ["com.apple.ttsbundle.Joana-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Joana-compact"
+      ],
       "googleTTSLanguageCode": "pt-PT",
       "googleTTSVoice": "pt-PT-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "zh-CN",
@@ -162,11 +196,14 @@
       "countryCode": "CN",
       "localeIdentifier": "zh-CN",
       "flag": "🇨🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Ting-Ting-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Ting-Ting-compact"
+      ],
       "googleTTSLanguageCode": "cmn-CN",
       "googleTTSVoice": "cmn-CN-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "zh-TW",
@@ -176,11 +213,14 @@
       "countryCode": "TW",
       "localeIdentifier": "zh-TW",
       "flag": "🇹🇼",
-      "ttsVoices": ["com.apple.ttsbundle.Mei-Jia-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Mei-Jia-compact"
+      ],
       "googleTTSLanguageCode": "cmn-TW",
       "googleTTSVoice": "cmn-TW-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "ja-JP",
@@ -190,11 +230,14 @@
       "countryCode": "JP",
       "localeIdentifier": "ja-JP",
       "flag": "🇯🇵",
-      "ttsVoices": ["com.apple.ttsbundle.Kyoko-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Kyoko-compact"
+      ],
       "googleTTSLanguageCode": "ja-JP",
       "googleTTSVoice": "ja-JP-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "ko-KR",
@@ -204,11 +247,14 @@
       "countryCode": "KR",
       "localeIdentifier": "ko-KR",
       "flag": "🇰🇷",
-      "ttsVoices": ["com.apple.ttsbundle.Yuna-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Yuna-compact"
+      ],
       "googleTTSLanguageCode": "ko-KR",
       "googleTTSVoice": "ko-KR-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "ar-XA",
@@ -218,11 +264,14 @@
       "countryCode": "XA",
       "localeIdentifier": "ar-SA",
       "flag": "🇸🇦",
-      "ttsVoices": ["com.apple.ttsbundle.Maged-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Maged-compact"
+      ],
       "googleTTSLanguageCode": "ar-XA",
       "googleTTSVoice": "ar-XA-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "ru-RU",
@@ -232,11 +281,14 @@
       "countryCode": "RU",
       "localeIdentifier": "ru-RU",
       "flag": "🇷🇺",
-      "ttsVoices": ["com.apple.ttsbundle.Milena-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Milena-compact"
+      ],
       "googleTTSLanguageCode": "ru-RU",
       "googleTTSVoice": "ru-RU-Standard-A",
       "category": "Popular",
-      "isPopular": true
+      "isPopular": true,
+      "isPremium": true
     },
     {
       "id": "hi-IN",
@@ -246,11 +298,14 @@
       "countryCode": "IN",
       "localeIdentifier": "hi-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Lekha-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Lekha-compact"
+      ],
       "googleTTSLanguageCode": "hi-IN",
       "googleTTSVoice": "hi-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "nl-NL",
@@ -260,11 +315,14 @@
       "countryCode": "NL",
       "localeIdentifier": "nl-NL",
       "flag": "🇳🇱",
-      "ttsVoices": ["com.apple.ttsbundle.Ellen-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Ellen-compact"
+      ],
       "googleTTSLanguageCode": "nl-NL",
       "googleTTSVoice": "nl-NL-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "sv-SE",
@@ -274,11 +332,14 @@
       "countryCode": "SE",
       "localeIdentifier": "sv-SE",
       "flag": "🇸🇪",
-      "ttsVoices": ["com.apple.ttsbundle.Klara-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Klara-compact"
+      ],
       "googleTTSLanguageCode": "sv-SE",
       "googleTTSVoice": "sv-SE-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "no-NO",
@@ -288,11 +349,14 @@
       "countryCode": "NO",
       "localeIdentifier": "no-NO",
       "flag": "🇳🇴",
-      "ttsVoices": ["com.apple.ttsbundle.Nora-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Nora-compact"
+      ],
       "googleTTSLanguageCode": "nb-NO",
       "googleTTSVoice": "nb-NO-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "da-DK",
@@ -302,11 +366,14 @@
       "countryCode": "DK",
       "localeIdentifier": "da-DK",
       "flag": "🇩🇰",
-      "ttsVoices": ["com.apple.ttsbundle.Sara-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Sara-compact"
+      ],
       "googleTTSLanguageCode": "da-DK",
       "googleTTSVoice": "da-DK-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "pl-PL",
@@ -316,11 +383,14 @@
       "countryCode": "PL",
       "localeIdentifier": "pl-PL",
       "flag": "🇵🇱",
-      "ttsVoices": ["com.apple.ttsbundle.Zosia-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Zosia-compact"
+      ],
       "googleTTSLanguageCode": "pl-PL",
       "googleTTSVoice": "pl-PL-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "cs-CZ",
@@ -330,11 +400,14 @@
       "countryCode": "CZ",
       "localeIdentifier": "cs-CZ",
       "flag": "🇨🇿",
-      "ttsVoices": ["com.apple.ttsbundle.Zuzana-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Zuzana-compact"
+      ],
       "googleTTSLanguageCode": "cs-CZ",
       "googleTTSVoice": "cs-CZ-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "tr-TR",
@@ -344,11 +417,14 @@
       "countryCode": "TR",
       "localeIdentifier": "tr-TR",
       "flag": "🇹🇷",
-      "ttsVoices": ["com.apple.ttsbundle.Yelda-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Yelda-compact"
+      ],
       "googleTTSLanguageCode": "tr-TR",
       "googleTTSVoice": "tr-TR-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "th-TH",
@@ -358,11 +434,14 @@
       "countryCode": "TH",
       "localeIdentifier": "th-TH",
       "flag": "🇹🇭",
-      "ttsVoices": ["com.apple.ttsbundle.Kanya-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Kanya-compact"
+      ],
       "googleTTSLanguageCode": "th-TH",
       "googleTTSVoice": "th-TH-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "vi-VN",
@@ -372,11 +451,14 @@
       "countryCode": "VN",
       "localeIdentifier": "vi-VN",
       "flag": "🇻🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Linh-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Linh-compact"
+      ],
       "googleTTSLanguageCode": "vi-VN",
       "googleTTSVoice": "vi-VN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "id-ID",
@@ -386,11 +468,14 @@
       "countryCode": "ID",
       "localeIdentifier": "id-ID",
       "flag": "🇮🇩",
-      "ttsVoices": ["com.apple.ttsbundle.Damayanti-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Damayanti-compact"
+      ],
       "googleTTSLanguageCode": "id-ID",
       "googleTTSVoice": "id-ID-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "bn-IN",
@@ -400,11 +485,14 @@
       "countryCode": "IN",
       "localeIdentifier": "bn-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Ruma-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Ruma-compact"
+      ],
       "googleTTSLanguageCode": "bn-IN",
       "googleTTSVoice": "bn-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "ta-IN",
@@ -414,11 +502,14 @@
       "countryCode": "IN",
       "localeIdentifier": "ta-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Shruti-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Shruti-compact"
+      ],
       "googleTTSLanguageCode": "ta-IN",
       "googleTTSVoice": "ta-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "te-IN",
@@ -428,11 +519,14 @@
       "countryCode": "IN",
       "localeIdentifier": "te-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Vani-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Vani-compact"
+      ],
       "googleTTSLanguageCode": "te-IN",
       "googleTTSVoice": "te-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "ml-IN",
@@ -442,11 +536,14 @@
       "countryCode": "IN",
       "localeIdentifier": "ml-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Veena-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Veena-compact"
+      ],
       "googleTTSLanguageCode": "ml-IN",
       "googleTTSVoice": "ml-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "kn-IN",
@@ -456,11 +553,14 @@
       "countryCode": "IN",
       "localeIdentifier": "kn-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Kyathi-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Kyathi-compact"
+      ],
       "googleTTSLanguageCode": "kn-IN",
       "googleTTSVoice": "kn-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "gu-IN",
@@ -470,11 +570,14 @@
       "countryCode": "IN",
       "localeIdentifier": "gu-IN",
       "flag": "🇮🇳",
-      "ttsVoices": ["com.apple.ttsbundle.Meera-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Meera-compact"
+      ],
       "googleTTSLanguageCode": "gu-IN",
       "googleTTSVoice": "gu-IN-Standard-A",
       "category": "Asian",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "fi-FI",
@@ -484,11 +587,14 @@
       "countryCode": "FI",
       "localeIdentifier": "fi-FI",
       "flag": "🇫🇮",
-      "ttsVoices": ["com.apple.ttsbundle.Satu-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Satu-compact"
+      ],
       "googleTTSLanguageCode": "fi-FI",
       "googleTTSVoice": "fi-FI-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "hu-HU",
@@ -498,11 +604,14 @@
       "countryCode": "HU",
       "localeIdentifier": "hu-HU",
       "flag": "🇭🇺",
-      "ttsVoices": ["com.apple.ttsbundle.Mariska-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Mariska-compact"
+      ],
       "googleTTSLanguageCode": "hu-HU",
       "googleTTSVoice": "hu-HU-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "sk-SK",
@@ -512,11 +621,14 @@
       "countryCode": "SK",
       "localeIdentifier": "sk-SK",
       "flag": "🇸🇰",
-      "ttsVoices": ["com.apple.ttsbundle.Laura-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Laura-compact"
+      ],
       "googleTTSLanguageCode": "sk-SK",
       "googleTTSVoice": "sk-SK-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     },
     {
       "id": "uk-UA",
@@ -526,11 +638,14 @@
       "countryCode": "UA",
       "localeIdentifier": "uk-UA",
       "flag": "🇺🇦",
-      "ttsVoices": ["com.apple.ttsbundle.Lesya-compact"],
+      "ttsVoices": [
+        "com.apple.ttsbundle.Lesya-compact"
+      ],
       "googleTTSLanguageCode": "uk-UA",
       "googleTTSVoice": "uk-UA-Standard-A",
       "category": "European",
-      "isPopular": false
+      "isPopular": false,
+      "isPremium": true
     }
   ]
 }
