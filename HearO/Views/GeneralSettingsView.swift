@@ -37,7 +37,10 @@ struct GeneralSettingsView: View {
                 }
             }
             .navigationTitle("General")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(nil, for: .navigationBar)
         }
         .navigationViewStyle(StackNavigationViewStyle())
         .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)

@@ -46,6 +46,9 @@ struct LanguageSelectionView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(nil, for: .navigationBar)
             .toolbar {
                 // Removed Cancel button
             }
@@ -78,6 +81,9 @@ struct LanguageSelectionView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(nil, for: .navigationBar)
             .toolbar {
                 // Removed Cancel button
             }

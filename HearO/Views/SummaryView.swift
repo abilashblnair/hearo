@@ -300,6 +300,9 @@ struct SummaryView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("AI Summary")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(

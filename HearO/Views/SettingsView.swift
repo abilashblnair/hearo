@@ -19,7 +19,7 @@ struct SettingsView: View {
     @State private var restoreSuccess = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 // Premium status section
                 Section(header: Text("Account")) {
@@ -115,8 +115,16 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(nil, for: .navigationBar)
+            .overlay {
+                // Programmatic navigation to General settings
+                NavigationLink(destination: GeneralSettingsView(), isActive: $navigateToGeneral) { EmptyView() }
+                    .hidden()
+            }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
         .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
         .fullScreenCover(isPresented: $subscriptionManager.showSubscriptionSuccessView) {
             SubscriptionSuccessView()

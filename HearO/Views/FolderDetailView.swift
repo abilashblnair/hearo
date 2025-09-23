@@ -12,10 +12,10 @@ struct FolderDetailView: View {
     @Binding var navigateToTranscript: Bool
     @Binding var currentTranscriptSession: Session?
     @Binding var currentTranscriptRecording: Recording?
-    
+
     @State private var recordings: [Recording] = []
     @State private var isLoading = true
-    
+
     // Playback state
     @State private var player: AVAudioPlayer?
     @State private var playingID: UUID?
@@ -25,33 +25,36 @@ struct FolderDetailView: View {
     @State private var isSeeking = false
     @State private var seekTime: TimeInterval = 0
     private let playbackTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
-    
+
     // Multi-selection and management state
     @State private var isMultiSelectMode: Bool = false
     @State private var selectedRecordings: Set<UUID> = []
     @State private var expandedRecordings: Set<UUID> = []
-    
+
     // Recording management state
     @State private var showingRenameDialog: Bool = false
     @State private var renamingRecording: Recording? = nil
     @State private var newRecordingName: String = ""
     @State private var showingShareSheet: Bool = false
     @State private var shareItems: [Any] = []
-    
+
     // Transcription state
     @State private var isTranscribing: Bool = false
     @State private var transcribingRecordingID: UUID? = nil
     @State private var transcribeError: String? = nil
-    
-    
+
+
     // Folder management state
     @State private var showingEditFolder: Bool = false
     @State private var showingDeleteFolderAlert: Bool = false
-    
+
     // Retention policy state
     @State private var showingRetentionAlert = false
     @State private var selectedRecordingForRetention: Recording? = nil
-    
+
+    // Paywall state
+    @State private var showPaywall = false
+
     // Mini recorder state
     @State private var recElapsed: TimeInterval = 0
     @State private var showMiniSavePrompt = false
@@ -60,15 +63,15 @@ struct FolderDetailView: View {
     @State private var miniCollapsed: Bool = false
     @State private var miniURL: URL? = nil
     @State private var showMiniResumePrompt = false
-    
+
     var body: some View {
         ZStack {
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 // Folder header
                 folderHeader
-                
+
                 // Multi-select toolbar
                 if isMultiSelectMode {
                     multiSelectToolbar
@@ -80,7 +83,7 @@ struct FolderDetailView: View {
                             alignment: .bottom
                         )
                 }
-                
+
                 // Recordings list
                 if isLoading {
                     ProgressView().padding()
@@ -88,7 +91,7 @@ struct FolderDetailView: View {
                     recordingsList
                 }
             }
-            
+
             // Transcription progress overlay
             if isTranscribing {
                 ZStack {
@@ -104,14 +107,17 @@ struct FolderDetailView: View {
             }
         }
         .navigationTitle(folder.name)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("Start Recording", systemImage: "record.circle.fill") {
                         onStartRecording()
                     }
-                    
+
                     if !recordings.isEmpty {
                         Divider()
                         if isMultiSelectMode {
@@ -124,13 +130,13 @@ struct FolderDetailView: View {
                             }
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     Button("Edit Folder", systemImage: "folder.badge.gearshape") {
                         showingEditFolder = true
                     }
-                    
+
                     if !folder.isDefault {
                         Button("Delete Folder", systemImage: "trash") {
                             showingDeleteFolderAlert = true
@@ -143,10 +149,11 @@ struct FolderDetailView: View {
                 }
             }
         }
+        .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
         .onAppear {
             Task { await loadRecordings() }
             setupPlayerDelegate()
-            
+
             // Ensure any recording session is properly cleaned up
             if !di.audio.isRecording {
                 di.audio.deactivateSessionIfNeeded()
@@ -156,8 +163,8 @@ struct FolderDetailView: View {
             Task { await loadRecordings() }
         }
         .onReceive(playbackTimer) { _ in
-            if isPlaying, let player, playingID != nil, !isSeeking { 
-                playbackTime = player.currentTime 
+            if isPlaying, let player, playingID != nil, !isSeeking {
+                playbackTime = player.currentTime
             }
             if di.audio.isSessionActive {
                 if di.audio.isRecording { di.audio.updateMeters() }
@@ -165,8 +172,8 @@ struct FolderDetailView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if di.audio.isSessionActive { 
-                miniBar.padding(.horizontal) 
+            if di.audio.isSessionActive {
+                miniBar.padding(.horizontal)
             }
         }
         .alert("Name your recording", isPresented: $showMiniSavePrompt) {
@@ -233,9 +240,9 @@ struct FolderDetailView: View {
             }
         }
     }
-    
+
     // MARK: - Folder Header
-    
+
     private var folderHeader: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
@@ -244,31 +251,31 @@ struct FolderDetailView: View {
                     Circle()
                         .fill(folder.color.opacity(0.2))
                         .frame(width: 50, height: 50)
-                    
+
                     Image(systemName: folder.isDefault ? "folder.fill.badge.gearshape" : "folder.fill")
                         .font(.title2)
                         .foregroundColor(folder.color)
                 }
-                
+
                 // Folder stats
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(folder.name)
                             .font(.title3)
                             .fontWeight(.semibold)
-                        
+
                         if folder.isDefault {
                             Image(systemName: "star.fill")
                                 .font(.caption)
                                 .foregroundColor(.yellow)
                         }
                     }
-                    
+
                     HStack(spacing: 12) {
                         Label("\(folder.recordingCount)", systemImage: "waveform")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
+
                         if folder.totalDuration > 0 {
                             Label(timeString(from: folder.totalDuration), systemImage: "clock")
                                 .font(.caption)
@@ -276,7 +283,7 @@ struct FolderDetailView: View {
                         }
                     }
                 }
-                
+
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -284,9 +291,9 @@ struct FolderDetailView: View {
         }
         .background(Color(.systemBackground))
     }
-    
+
     // MARK: - Recordings List
-    
+
     private var recordingsList: some View {
         Group {
             if isMultiSelectMode {
@@ -328,15 +335,15 @@ struct FolderDetailView: View {
             }
         }
     }
-    
+
     // MARK: - Recording Row (Reused from RecordListView)
-    
+
     @ViewBuilder
     private func recordingRow(for rec: Recording) -> some View {
         let isRowPlaying = (playingID == rec.id && isPlaying)
         let totalDuration: TimeInterval = (isRowPlaying ? (player?.duration ?? rec.duration) : rec.duration)
         let isSelected = selectedRecordings.contains(rec.id)
-        
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 // Multi-select checkbox
@@ -359,7 +366,7 @@ struct FolderDetailView: View {
                     .buttonStyle(.borderless)
                     .padding(.horizontal, 8)
                 }
-                
+
                 // Recording info
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
@@ -373,7 +380,7 @@ struct FolderDetailView: View {
                     Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     // Show notes preview if available
                     if let notes = rec.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !expandedRecordings.contains(rec.id) {
                         Text(notes.prefix(60) + (notes.count > 60 ? "..." : ""))
@@ -395,9 +402,9 @@ struct FolderDetailView: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 }
-                
+
                 Spacer()
-                
+
                 if !isMultiSelectMode {
                     // Transcribe button
                     Button(action: { Task { await transcribeRecording(rec) } }) {
@@ -428,19 +435,19 @@ struct FolderDetailView: View {
                     .buttonStyle(.borderless)
                     .disabled(isTranscribing)
                     .opacity(isTranscribing ? 0.5 : 1.0)
-                    
-                    // 3-dot menu  
+
+                    // 3-dot menu
                     Menu {
                         Button(action: { startRename(rec) }) {
                             Label("Rename", systemImage: "pencil")
                         }
-                        
+
                         Button(action: { shareRecording(rec) }) {
                             Label("Share", systemImage: "square.and.arrow.up")
                         }
-                        
+
                         Divider()
-                        
+
                         Button(role: .destructive, action: { deleteRecording(rec) }) {
                             Label("Delete", systemImage: "trash")
                         }
@@ -453,12 +460,12 @@ struct FolderDetailView: View {
                     .buttonStyle(.borderless)
                 }
             }
-            
+
             // Playback controls (same as RecordListView)
             if playingID == rec.id && !isMultiSelectMode {
                 playbackControls(for: rec, totalDuration: totalDuration)
             }
-            
+
             // Expanded notes section
             if expandedRecordings.contains(rec.id), let notes = rec.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 expandedNotesSection(notes: notes)
@@ -468,24 +475,24 @@ struct FolderDetailView: View {
         .animation(.easeInOut(duration: 0.2), value: isSelected)
         .animation(.easeInOut(duration: 0.2), value: expandedRecordings.contains(rec.id))
     }
-    
+
     // MARK: - Multi-Select Toolbar
-    
+
     private var multiSelectToolbar: some View {
         HStack {
             Button("Cancel") {
                 exitMultiSelectMode()
             }
             .foregroundColor(.accentColor)
-            
+
             Spacer()
-            
+
             Text("\(selectedRecordings.count) selected")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
+
             Spacer()
-            
+
             HStack(spacing: 16) {
                 if !selectedRecordings.isEmpty {
                     Button(action: shareSelectedRecordings) {
@@ -493,7 +500,7 @@ struct FolderDetailView: View {
                             .font(.title3)
                     }
                     .disabled(selectedRecordings.isEmpty)
-                    
+
                     Button(action: deleteSelectedRecordings) {
                         Image(systemName: "trash")
                             .font(.title3)
@@ -511,15 +518,15 @@ struct FolderDetailView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }
-    
+
     // MARK: - Helper Views
-    
+
     private func playbackControls(for rec: Recording, totalDuration: TimeInterval) -> some View {
         HStack(spacing: 8) {
             Text(format(duration: isSeeking ? seekTime : playbackTime))
                 .font(.caption.monospacedDigit())
                 .foregroundColor(isSeeking ? .blue : .secondary)
-            
+
             // Interactive seek slider
             GeometryReader { geometry in
                 ZStack {
@@ -527,7 +534,7 @@ struct FolderDetailView: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color(.systemGray4))
                         .frame(height: 4)
-                    
+
                     // Progress track
                     HStack {
                         RoundedRectangle(cornerRadius: 2)
@@ -536,7 +543,7 @@ struct FolderDetailView: View {
                             .frame(width: max(0, CGFloat(totalDuration > 0 ? (isSeeking ? seekTime : playbackTime) / totalDuration : 0) * geometry.size.width))
                         Spacer(minLength: 0)
                     }
-                    
+
                     // Slider thumb
                     HStack {
                         Spacer()
@@ -569,13 +576,13 @@ struct FolderDetailView: View {
                 )
             }
             .frame(height: 44)
-            
+
             Text(format(duration: totalDuration))
                 .font(.caption.monospacedDigit())
                 .foregroundColor(.secondary)
         }
     }
-    
+
     private func expandedNotesSection(notes: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -588,7 +595,7 @@ struct FolderDetailView: View {
                     .foregroundColor(.secondary)
                 Spacer()
             }
-            
+
             Text(notes.trimmingCharacters(in: .whitespacesAndNewlines))
                 .font(.caption)
                 .foregroundColor(.primary)
@@ -601,7 +608,7 @@ struct FolderDetailView: View {
         .padding(.top, 8)
         .transition(.opacity.combined(with: .slide))
     }
-    
+
     // Mini recorder bar (same as RecordListView)
     private var miniBar: some View {
         HStack(spacing: 12) {
@@ -664,23 +671,23 @@ struct FolderDetailView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator), lineWidth: 0.5))
     }
-    
+
     // MARK: - Recording Control Functions
-    
+
     // MARK: - Actions and Helper Methods (Similar to RecordListView)
-    
+
     @MainActor
     private func loadRecordings() async {
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
             let folderStore = FolderDataStore(context: modelContext)
             recordings = try folderStore.fetchRecordings(in: folder)
         } catch {
         }
     }
-    
+
     private func setupPlayerDelegate() {
         playerDelegate.onFinish = {
             isPlaying = false
@@ -690,29 +697,29 @@ struct FolderDetailView: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
     }
-    
+
     // Include other methods from RecordListView (transcribeRecording, togglePlayback, etc.)
     // ... (For brevity, I'm not repeating all methods here, but they should be copied over)
-    
+
     private func timeString(from interval: TimeInterval) -> String {
         let totalSeconds = Int(interval)
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
-        
+
         if hours > 0 {
             return "\(hours)h \(minutes)m"
         } else {
             return "\(minutes)m"
         }
     }
-    
+
     private func format(duration: TimeInterval) -> String {
         let total = Int(duration)
         let m = total / 60
         let s = total % 60
         return String(format: "%02d:%02d", m, s)
     }
-    
+
     // MARK: - Transcription
     @MainActor
     private func transcribeRecording(_ rec: Recording) async {
@@ -735,12 +742,12 @@ struct FolderDetailView: View {
                 segments = cachedSegments
             } else {
                 let audioURL = rec.finalAudioURL()
-                
+
                 // Additional file existence check
                 guard FileManager.default.fileExists(atPath: audioURL.path) else {
                     throw NSError(domain: "TranscriptionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Audio file not found"])
                 }
-                
+
                 segments = try await di.transcription.transcribe(audioURL: audioURL, languageCode: languageCode)
 
                 // Cache the transcript in the Recording model
@@ -779,9 +786,9 @@ struct FolderDetailView: View {
             transcribeError = error.localizedDescription
         }
     }
-    
+
     // MARK: - Playback Controls
-    
+
     private func togglePlayback(for rec: Recording) {
         if playingID == rec.id, let player = player {
             if isPlaying {
@@ -844,23 +851,23 @@ struct FolderDetailView: View {
             }
         }
     }
-    
+
     // MARK: - Multi-Selection Management
-    
+
     private func enterMultiSelectMode() {
         withAnimation(.easeInOut(duration: 0.3)) {
             isMultiSelectMode = true
             selectedRecordings.removeAll()
         }
     }
-    
+
     private func exitMultiSelectMode() {
         withAnimation(.easeInOut(duration: 0.3)) {
             isMultiSelectMode = false
             selectedRecordings.removeAll()
         }
     }
-    
+
     private func toggleSelection(for recording: Recording) {
         withAnimation(.easeInOut(duration: 0.2)) {
             if selectedRecordings.contains(recording.id) {
@@ -871,15 +878,15 @@ struct FolderDetailView: View {
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     // MARK: - Recording Management
-    
+
     private func startRename(_ recording: Recording) {
         renamingRecording = recording
         newRecordingName = recording.title
         showingRenameDialog = true
     }
-    
+
     private func renameCurrentRecording() {
         guard let recording = renamingRecording else { return }
         let trimmedName = newRecordingName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -888,17 +895,17 @@ struct FolderDetailView: View {
         }
         cancelRename()
     }
-    
+
     private func cancelRename() {
         renamingRecording = nil
         newRecordingName = ""
         showingRenameDialog = false
     }
-    
+
     private func renameRecording(_ recording: Recording, newName: String) {
         // Update the recording title
         recording.title = newName
-        
+
         // Save to context
         do {
             try modelContext.save()
@@ -917,13 +924,13 @@ struct FolderDetailView: View {
     private func shareSelectedRecordings() {
         let selectedRecs = recordings.filter { selectedRecordings.contains($0.id) }
         let shareUrls = selectedRecs.map { $0.finalAudioURL() }
-        
+
         if !shareUrls.isEmpty {
             shareItems = shareUrls
             showingShareSheet = true
         }
     }
-    
+
     private func deleteRecording(_ recording: Recording) {
         do {
             try RecordingDataStore(context: modelContext).deleteRecording(recording)
@@ -933,17 +940,17 @@ struct FolderDetailView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
-    
+
     private func deleteSelectedRecordings() {
         let selectedRecs = recordings.filter { selectedRecordings.contains($0.id) }
-        
+
         for recording in selectedRecs {
             deleteRecording(recording)
         }
-        
+
         exitMultiSelectMode()
     }
-    
+
     private func updateFolder(_ updatedFolder: RecordingFolder) async {
         let folderStore = FolderDataStore(context: modelContext)
         do {
@@ -951,7 +958,7 @@ struct FolderDetailView: View {
         } catch {
         }
     }
-    
+
     private func deleteFolder() {
         let folderStore = FolderDataStore(context: modelContext)
         do {
@@ -961,19 +968,19 @@ struct FolderDetailView: View {
                     try folderStore.moveRecording(recording, to: defaultFolder)
                 }
             }
-            
+
             // Delete the folder
             try folderStore.deleteFolder(folder)
-            
+
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            
+
         } catch {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
-    
+
     // MARK: - Additional Helper Methods
-    
+
     private func delete(at offsets: IndexSet) {
         // Stop playback and deactivate session if deleting current item
         if let currentID = playingID, let idx = offsets.first, recordings.indices.contains(idx), recordings[idx].id == currentID {
@@ -983,18 +990,18 @@ struct FolderDetailView: View {
             isSeeking = false
             setPlaybackSessionActive(false)
         }
-        
+
         var toDelete: [Recording] = []
-        for index in offsets { 
-            if recordings.indices.contains(index) { 
-                toDelete.append(recordings[index]) 
-            } 
+        for index in offsets {
+            if recordings.indices.contains(index) {
+                toDelete.append(recordings[index])
+            }
         }
-        
-        withAnimation { 
-            recordings.remove(atOffsets: offsets) 
+
+        withAnimation {
+            recordings.remove(atOffsets: offsets)
         }
-        
+
         let store = RecordingDataStore(context: modelContext)
         for rec in toDelete {
             try? FileManager.default.removeItem(at: rec.finalAudioURL())
@@ -1002,20 +1009,20 @@ struct FolderDetailView: View {
         }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
-    
+
     private func seekToTime(_ time: TimeInterval) {
-        guard let player = player else { 
-            return 
+        guard let player = player else {
+            return
         }
-        
+
         let clampedTime = max(0, min(time, player.duration))
-        
+
         player.currentTime = clampedTime
         playbackTime = clampedTime
-        
+
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     private func toggleMiniPauseResume() {
         // Check if there are pending resume operations (interruption state)
         if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl,
@@ -1024,7 +1031,7 @@ struct FolderDetailView: View {
             showMiniResumePrompt = true
             return
         }
-        
+
         do {
             if di.audio.isRecording {
                 // Pause only
@@ -1038,30 +1045,30 @@ struct FolderDetailView: View {
                 // No session -> need to start fresh recording, check limits
                 onStartRecording()
             }
-        } catch { 
-            UINotificationFeedbackGenerator().notificationOccurred(.error) 
+        } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
-    
+
     private func manualResumeMiniRecording() {
         if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
             unifiedService.forceResumeAfterInterruption()
-            
+
             // Give a small delay for the audio service to process the resume
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 self.syncMiniRecorderState()
             }
-            
+
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
     }
-    
+
     private func syncMiniRecorderState() {
         guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else { return }
-        
+
         // Update elapsed time to trigger UI refresh
         recElapsed = unifiedService.currentTime
-        
+
         // Update prompt state to ensure it's closed after resume
         showMiniResumePrompt = false
     }
@@ -1073,8 +1080,8 @@ struct FolderDetailView: View {
             miniLastDuration = try di.audio.stopRecording()
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             showMiniSavePrompt = true
-        } catch { 
-            UINotificationFeedbackGenerator().notificationOccurred(.error) 
+        } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 
@@ -1086,7 +1093,7 @@ struct FolderDetailView: View {
         // Store relative path so sandbox container UUID changes don't break playbook
         let relativePath = "audio/\(id.uuidString).m4a"
         let rec = Recording(id: id, title: title, createdAt: Date(), audioURL: relativePath, duration: miniLastDuration, notes: nil, folder: folder)
-        
+
         do {
             let folderStore = FolderDataStore(context: modelContext)
             try folderStore.saveRecording(rec, to: folder)
@@ -1094,11 +1101,11 @@ struct FolderDetailView: View {
             miniNameText = ""
             showMiniSavePrompt = false
             miniURL = nil
-        } catch { 
-            UINotificationFeedbackGenerator().notificationOccurred(.error) 
+        } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
-    
+
     // Activate/deactivate playback audio session for reliable speaker output
     private func setPlaybackSessionActive(_ active: Bool) {
         // Run session changes on background queue to avoid blocking main thread
@@ -1121,21 +1128,21 @@ struct FolderDetailView: View {
             }
         }
     }
-    private func getStatusColor() -> Color { 
+    private func getStatusColor() -> Color {
         return di.audio.isRecording ? Color.red : Color.orange
     }
-    
-    private func getStatusText() -> String { 
+
+    private func getStatusText() -> String {
         return di.audio.isRecording ? "Recording…" : "Paused"
     }
-    
+
     // MARK: - Retention Policy UI
-    
+
     @ViewBuilder
     private func retentionBadge(for recording: Recording) -> some View {
         let daysRemaining = getDaysUntilDeletion(for: recording)
         let isUrgent = daysRemaining <= 3
-        
+
         // Always show days remaining for free users
         Button(action: {
             if isUrgent {
@@ -1165,14 +1172,14 @@ struct FolderDetailView: View {
         .buttonStyle(.plain)
         .disabled(!isUrgent) // Only tappable when urgent
     }
-    
+
     private func getDaysUntilDeletion(for recording: Recording) -> Int {
         let daysSinceRecording = Calendar.current.dateComponents([.day], from: recording.createdAt, to: Date()).day ?? 0
         return max(0, FeatureManager.FreeTierLimits.historyRetentionDays - daysSinceRecording)
     }
-    
+
     // MARK: - Badge Styling Helpers
-    
+
     private func getBadgeIcon(for daysRemaining: Int) -> String {
         switch daysRemaining {
         case 0:
@@ -1183,7 +1190,7 @@ struct FolderDetailView: View {
             return "calendar"
         }
     }
-    
+
     private func getBadgeText(for daysRemaining: Int) -> String {
         switch daysRemaining {
         case 0:
@@ -1198,7 +1205,7 @@ struct FolderDetailView: View {
             return "\(daysRemaining)d"
         }
     }
-    
+
     private func getBadgeTextColor(for daysRemaining: Int) -> Color {
         switch daysRemaining {
         case 0:
@@ -1209,7 +1216,7 @@ struct FolderDetailView: View {
             return .secondary
         }
     }
-    
+
     private func getBadgeBackgroundColor(for daysRemaining: Int) -> Color {
         switch daysRemaining {
         case 0:
@@ -1222,7 +1229,7 @@ struct FolderDetailView: View {
             return Color(.systemGray6)
         }
     }
-    
+
     private func getBadgeBorderColor(for daysRemaining: Int) -> Color {
         switch daysRemaining {
         case 0...3:
@@ -1231,11 +1238,12 @@ struct FolderDetailView: View {
             return Color(.systemGray4)
         }
     }
-    
+
     private func showPaywallForRetentionWarning() {
-        // Navigate to paywall/subscription view
+        // Clear the retention alert state first
         selectedRecordingForRetention = nil
-        // TODO: Integrate with paywall system
-        // This should trigger the paywall presentation
+
+        // Trigger the paywall presentation
+        showPaywall = true
     }
 }

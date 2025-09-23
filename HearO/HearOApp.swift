@@ -11,6 +11,7 @@ import UIKit
 import GoogleMobileAds
 import Adapty
 import AdaptyUI
+import Foundation
 
 @main
 struct HearOApp: App {
@@ -22,6 +23,8 @@ struct HearOApp: App {
         Task {
             await HearOApp.initializeAdapty()
         }
+        // Apply global glass design appearance
+        GlassDesign.applyGlobalAppearance()
     }
 
     @StateObject private var di = ServiceContainer.create()

@@ -132,6 +132,9 @@ struct TranslationView: View {
         )
         .navigationTitle("Translation")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .navigationBarBackButtonHidden(false)
 
         .toolbar {

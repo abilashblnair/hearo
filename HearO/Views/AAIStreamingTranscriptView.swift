@@ -96,6 +96,10 @@ struct AAIStreamingTranscriptView: View {
             }
         }
         .navigationTitle("Live Transcript (AAI)")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
             ToolbarItem(placement: .topBarTrailing) {

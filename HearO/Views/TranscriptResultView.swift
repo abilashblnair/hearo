@@ -115,6 +115,9 @@ struct TranscriptResultView: View {
         )
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .navigationDestination(isPresented: $navigateToLanguageSelection) {
             LanguageSelectionView(selectedLanguage: selectedTargetLanguage) { language in
                 selectedTargetLanguage = language

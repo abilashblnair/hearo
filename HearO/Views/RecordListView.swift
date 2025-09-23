@@ -50,12 +50,12 @@ struct RecordListView: View {
     @State private var transcribeError: String? = nil
     @State private var transcriptText: String = ""
     @State private var transcriptSegments: [TranscriptSegment] = []
-    
+
     // Multi-selection and management state
     @State private var isMultiSelectMode: Bool = false
     @State private var selectedRecordings: Set<UUID> = []
     @State private var expandedRecordings: Set<UUID> = []
-    
+
     // Interruption handling state
     @State private var showMiniResumePrompt = false
     @State private var showingRenameDialog: Bool = false
@@ -63,12 +63,14 @@ struct RecordListView: View {
     @State private var newRecordingName: String = ""
     @State private var showingShareSheet: Bool = false
     @State private var shareItems: [Any] = []
-    
+
     // Retention policy state
     @State private var showingRetentionAlert = false
     @State private var selectedRecordingForRetention: Recording? = nil
-    
-    
+
+    // Paywall state
+    @State private var showPaywall = false
+
     // Audio file import state
     @State private var showingAudioFilePicker: Bool = false
     @State private var showingUploadSavePopup: Bool = false
@@ -79,7 +81,8 @@ struct RecordListView: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+            // Glass background for the page
+            Color.clear.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Multi-select toolbar
@@ -93,7 +96,7 @@ struct RecordListView: View {
                             alignment: .bottom
                         )
                 }
-                
+
                 // Main content
                 VStack(spacing: 12) {
                     // Lightweight header so the screen never looks empty
@@ -106,16 +109,15 @@ struct RecordListView: View {
             }
 
             // Pre-recorded transcription progress
-            if isTranscribing {
+                if isTranscribing {
                 ZStack {
-                    Color.black.opacity(0.3).ignoresSafeArea()
+                        Color.black.opacity(0.2).ignoresSafeArea()
                     VStack(spacing: 12) {
                         ProgressView()
                         Text("Transcribing…").font(.footnote).foregroundColor(.secondary)
                     }
                     .padding(16)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
+                        .glassBackground(cornerRadius: 12)
                 }
             }
         }
@@ -185,7 +187,7 @@ struct RecordListView: View {
                 Button("Stop Recording", role: .destructive) {
                     stopMiniAndPrompt()
                 }
-                Button("Not Now", role: .cancel) { 
+                Button("Not Now", role: .cancel) {
                     showMiniResumePrompt = false
                 }
             } message: {
@@ -241,7 +243,7 @@ struct RecordListView: View {
             .overlay {
                 if isImportingAudio {
                     ZStack {
-                        Color.black.opacity(0.3).ignoresSafeArea()
+                        Color.black.opacity(0.2).ignoresSafeArea()
                         VStack(spacing: 12) {
                             ProgressView()
                             Text("Processing audio file...")
@@ -249,20 +251,22 @@ struct RecordListView: View {
                                 .foregroundColor(.secondary)
                         }
                         .padding(16)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
+                        .glassBackground(cornerRadius: 12)
                     }
             }
         }
         .navigationTitle("Recordings")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("Start Recording", systemImage: "record.circle.fill") {
                         onStartRecording()
                     }
-                    
+
                     if !recordings.isEmpty {
                         Divider()
                         if isMultiSelectMode {
@@ -275,9 +279,9 @@ struct RecordListView: View {
                             }
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     Button("Import Audio File", systemImage: "plus.circle") {
                         showingAudioFilePicker = true
                     }
@@ -287,6 +291,7 @@ struct RecordListView: View {
                 }
             }
         }
+        .paywall(isPresented: $showPaywall, placementId: AppConfigManager.shared.adaptyPlacementID)
 
     }
     // MARK: - Record List
@@ -332,15 +337,15 @@ struct RecordListView: View {
             }
         }
     }
-    
+
     // MARK: - Recording Row
-    
+
     @ViewBuilder
     private func recordingRow(for rec: Recording) -> some View {
         let isRowPlaying = (playingID == rec.id && isPlaying)
         let totalDuration: TimeInterval = (isRowPlaying ? (player?.duration ?? rec.duration) : rec.duration)
         let isSelected = selectedRecordings.contains(rec.id)
-        
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 // Multi-select checkbox
@@ -355,8 +360,8 @@ struct RecordListView: View {
                     .padding(.horizontal, 4)
                 } else {
                     // Play/pause button
-                    Button(action: { 
-                        togglePlayback(for: rec) 
+                    Button(action: {
+                        togglePlayback(for: rec)
                     }) {
                         Image(systemName: isRowPlaying ? "pause.fill" : "play.fill")
                             .font(.title3)
@@ -365,7 +370,7 @@ struct RecordListView: View {
                     .buttonStyle(.borderless)
                     .padding(.horizontal, 8)
                 }
-                
+
                 // Recording info
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
@@ -379,7 +384,7 @@ struct RecordListView: View {
                     Text(rec.createdAt, style: .date) + Text(", ") + Text(rec.createdAt, style: .time)
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     // Show notes preview if available and cell is not expanded
                     if let notes = rec.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !expandedRecordings.contains(rec.id) {
                         Text(notes.prefix(60) + (notes.count > 60 ? "..." : ""))
@@ -401,9 +406,9 @@ struct RecordListView: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 }
-                
+
                 Spacer()
-                
+
                 if !isMultiSelectMode {
                     // Transcribe button
                     Button(action: { Task { await transcribeRecording(rec) } }) {
@@ -434,19 +439,19 @@ struct RecordListView: View {
                     .buttonStyle(.borderless)
                     .disabled(isTranscribing)
                     .opacity(isTranscribing ? 0.5 : 1.0)
-                    
-                    // 3-dot menu  
+
+                    // 3-dot menu
                     Menu {
                         Button(action: { startRename(rec) }) {
                             Label("Rename", systemImage: "pencil")
                         }
-                        
+
                         Button(action: { shareRecording(rec) }) {
                             Label("Share", systemImage: "square.and.arrow.up")
                         }
-                        
+
                         Divider()
-                        
+
                         Button(role: .destructive, action: { deleteRecording(rec) }) {
                             Label("Delete", systemImage: "trash")
                         }
@@ -459,14 +464,14 @@ struct RecordListView: View {
                     .buttonStyle(.borderless)
                 }
             }
-            
+
             // Playback controls
             if playingID == rec.id && !isMultiSelectMode {
                 HStack(spacing: 8) {
                     Text(format(duration: isSeeking ? seekTime : playbackTime))
                         .font(.caption.monospacedDigit())
                         .foregroundColor(isSeeking ? .blue : .secondary)
-                    
+
                     // Interactive seek slider with custom gesture handling
                     GeometryReader { geometry in
                         ZStack {
@@ -474,7 +479,7 @@ struct RecordListView: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color(.systemGray4))
                                 .frame(height: 4)
-                            
+
                             // Progress track
                             HStack {
                                 RoundedRectangle(cornerRadius: 2)
@@ -483,7 +488,7 @@ struct RecordListView: View {
                                     .frame(width: max(0, CGFloat(totalDuration > 0 ? (isSeeking ? seekTime : playbackTime) / totalDuration : 0) * geometry.size.width))
                                 Spacer(minLength: 0)
                             }
-                            
+
                             // Slider thumb
                             HStack {
                                 Spacer()
@@ -516,13 +521,13 @@ struct RecordListView: View {
                         )
                     }
                                             .frame(height: 44) // Larger touch target
-                    
+
                     Text(format(duration: totalDuration))
                         .font(.caption.monospacedDigit())
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             // Expanded notes section
             if expandedRecordings.contains(rec.id), let notes = rec.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -536,7 +541,7 @@ struct RecordListView: View {
                             .foregroundColor(.secondary)
                         Spacer()
                     }
-                    
+
                     Text(notes.trimmingCharacters(in: .whitespacesAndNewlines))
                         .font(.caption)
                         .foregroundColor(.primary)
@@ -554,24 +559,24 @@ struct RecordListView: View {
         .animation(.easeInOut(duration: 0.2), value: isSelected)
         .animation(.easeInOut(duration: 0.2), value: expandedRecordings.contains(rec.id))
     }
-    
+
     // MARK: - Multi-Select Toolbar
-    
+
     private var multiSelectToolbar: some View {
         HStack {
             Button("Cancel") {
                 exitMultiSelectMode()
             }
             .foregroundColor(.accentColor)
-            
+
             Spacer()
-            
+
             Text("\(selectedRecordings.count) selected")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
+
             Spacer()
-            
+
             HStack(spacing: 16) {
                 if !selectedRecordings.isEmpty {
                     Button(action: shareSelectedRecordings) {
@@ -579,7 +584,7 @@ struct RecordListView: View {
                             .font(.title3)
                     }
                     .disabled(selectedRecordings.isEmpty)
-                    
+
                     Button(action: deleteSelectedRecordings) {
                         Image(systemName: "trash")
                             .font(.title3)
@@ -622,8 +627,8 @@ struct RecordListView: View {
                 segments = cachedSegments
             } else {
                 let audioURL = rec.finalAudioURL()
-                
-                
+
+
                 // Additional file info
                 if FileManager.default.fileExists(atPath: audioURL.path) {
                     do {
@@ -632,7 +637,7 @@ struct RecordListView: View {
                     } catch {
                     }
                 } else {
-                    
+
                     // Check if file exists with different UUID
                     let audioDir = audioURL.deletingLastPathComponent()
                     if let files = try? FileManager.default.contentsOfDirectory(at: audioDir, includingPropertiesForKeys: nil) {
@@ -640,7 +645,7 @@ struct RecordListView: View {
                         }
                     }
                 }
-                
+
                 segments = try await di.transcription.transcribe(audioURL: audioURL, languageCode: languageCode)
 
                 // Cache the transcript in the Recording model
@@ -683,23 +688,23 @@ struct RecordListView: View {
             transcribeError = error.localizedDescription
         }
     }
-    
+
     // MARK: - Multi-Selection & Menu Actions
-    
+
     private func enterMultiSelectMode() {
         withAnimation(.easeInOut(duration: 0.3)) {
             isMultiSelectMode = true
             selectedRecordings.removeAll()
         }
     }
-    
+
     private func exitMultiSelectMode() {
         withAnimation(.easeInOut(duration: 0.3)) {
             isMultiSelectMode = false
             selectedRecordings.removeAll()
         }
     }
-    
+
     private func toggleSelection(for recording: Recording) {
         withAnimation(.easeInOut(duration: 0.2)) {
             if selectedRecordings.contains(recording.id) {
@@ -710,13 +715,13 @@ struct RecordListView: View {
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     private func startRename(_ recording: Recording) {
         renamingRecording = recording
         newRecordingName = recording.title
         showingRenameDialog = true
     }
-    
+
     private func renameCurrentRecording() {
         guard let recording = renamingRecording else { return }
         let trimmedName = newRecordingName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -725,17 +730,17 @@ struct RecordListView: View {
         }
         cancelRename()
     }
-    
+
     private func cancelRename() {
         renamingRecording = nil
         newRecordingName = ""
         showingRenameDialog = false
     }
-    
+
     private func renameRecording(_ recording: Recording, newName: String) {
         // Update the recording title
         recording.title = newName
-        
+
         // Save to context
         do {
             try modelContext.save()
@@ -746,20 +751,20 @@ struct RecordListView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
-    
+
     private func shareRecording(_ recording: Recording) {
         let audioURL = recording.finalAudioURL()
         shareItems = [audioURL]
         showingShareSheet = true
     }
-    
+
     private func shareSelectedRecordings() {
         let urls = recordings.filter { selectedRecordings.contains($0.id) }
                             .map { $0.finalAudioURL() }
         shareItems = urls
         showingShareSheet = true
     }
-    
+
     private func deleteRecording(_ recording: Recording) {
         // Stop playback if this recording is currently playing
         if playingID == recording.id {
@@ -769,29 +774,29 @@ struct RecordListView: View {
             isSeeking = false
             setPlaybackSessionActive(false)
         }
-        
+
         // Delete from storage
         let store = RecordingDataStore(context: modelContext)
         do {
             try FileManager.default.removeItem(at: recording.finalAudioURL())
             try store.deleteRecording(recording)
-            
+
             // Remove from local array
             withAnimation {
                 if let index = recordings.firstIndex(where: { $0.id == recording.id }) {
                     recordings.remove(at: index)
                 }
             }
-            
+
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
-    
+
     private func deleteSelectedRecordings() {
         let recordingsToDelete = recordings.filter { selectedRecordings.contains($0.id) }
-        
+
         // Stop playback if current item is being deleted
         if let currentID = playingID, selectedRecordings.contains(currentID) {
             player?.stop()
@@ -800,14 +805,14 @@ struct RecordListView: View {
             isSeeking = false
             setPlaybackSessionActive(false)
         }
-        
+
         let store = RecordingDataStore(context: modelContext)
-        
+
         withAnimation {
             // Remove from local array first for immediate UI feedback
             recordings.removeAll { selectedRecordings.contains($0.id) }
         }
-        
+
         // Delete files and database records
         for recording in recordingsToDelete {
             do {
@@ -816,7 +821,7 @@ struct RecordListView: View {
             } catch {
             }
         }
-        
+
         exitMultiSelectMode()
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
@@ -883,9 +888,9 @@ struct RecordListView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator), lineWidth: 0.5))
     }
-    
+
     // MARK: - Floating Upload Button
-    
+
     private var floatingUploadButton: some View {
         Button(action: {
             showingAudioFilePicker = true
@@ -897,7 +902,7 @@ struct RecordListView: View {
                     .fill(Color.accentColor)
                     .frame(width: 56, height: 56)
                     .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-                
+
                 // Plus icon
                 Image(systemName: "plus")
                     .font(.system(size: 24, weight: .medium))
@@ -909,31 +914,31 @@ struct RecordListView: View {
         .disabled(isImportingAudio)
         .animation(.easeInOut(duration: 0.2), value: isImportingAudio)
     }
-    
+
     // MARK: - Audio File Import Methods
-    
+
     @MainActor
     private func handleAudioFileSelection(_ url: URL) async {
         isImportingAudio = true
         defer { isImportingAudio = false }
-        
+
         do {
             // Get file access and copy to app sandbox
             guard url.startAccessingSecurityScopedResource() else {
                 throw NSError(domain: "AudioImportError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access selected file"])
             }
             defer { url.stopAccessingSecurityScopedResource() }
-            
+
             // Validate the original file first
             let originalAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let originalSize = originalAttributes[.size] as? Int64 ?? 0
             guard originalSize > 0 else {
                 throw NSError(domain: "AudioImportError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Selected file is empty"])
             }
-            
+
             // Check if it's a valid audio file before copying
             let tempAsset = AVAsset(url: url)
-            
+
             // Check for DRM protection first (most common issue)
             do {
                 let hasProtectedContent = try await tempAsset.load(.hasProtectedContent)
@@ -947,116 +952,116 @@ struct RecordListView: View {
                     throw error
                 }
             }
-            
+
             // Check basic readability
             let isReadable = try await tempAsset.load(.isReadable)
             let isPlayable = try await tempAsset.load(.isPlayable)
-            
+
             guard isReadable && isPlayable else {
                 throw NSError(domain: "AudioImportError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Selected file is not a valid audio format or is corrupted. Please choose an MP3, M4A, WAV, or other supported audio file."])
             }
-            
-            // Create destination URL in audio directory  
+
+            // Create destination URL in audio directory
             let id = UUID()
             let destinationURL = try AudioFileStore.url(for: id)
-            
-            
+
+
             // Ensure audio directory exists
             let audioDir = destinationURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: audioDir, withIntermediateDirectories: true)
-            
+
             // Copy file to sandbox
             try FileManager.default.copyItem(at: url, to: destinationURL)
-            
-            
+
+
             // Verify the copied file
             let copiedAttributes = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
             let copiedSize = copiedAttributes[.size] as? Int64 ?? 0
             guard copiedSize > 0 && copiedSize == originalSize else {
                 throw NSError(domain: "AudioImportError", code: 7, userInfo: [NSLocalizedDescriptionKey: "File copy was incomplete or corrupted"])
             }
-            
+
             // Get audio duration from the copied file
             let duration = try await getAudioDuration(from: destinationURL)
-            
+
             // Store for save popup
             importedAudioURL = destinationURL
             importedDuration = duration
-            
-            
+
+
             showingUploadSavePopup = true
-            
+
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            
+
         } catch {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
-            
+
             // Clean up any partially copied file
             if let tempURL = try? AudioFileStore.url(for: UUID()) {
                 try? FileManager.default.removeItem(at: tempURL)
             }
-            
+
             // Show user-friendly error
             await MainActor.run {
                 self.importError = error.localizedDescription
             }
         }
     }
-    
+
     private func getAudioDuration(from url: URL) async throws -> TimeInterval {
         // Verify file exists and is readable
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw NSError(domain: "AudioImportError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Audio file does not exist at path: \(url.path)"])
         }
-        
+
         // Check file size (avoid zero-byte files)
         let fileAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let fileSize = fileAttributes[.size] as? Int64 ?? 0
         guard fileSize > 0 else {
             throw NSError(domain: "AudioImportError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Audio file is empty or corrupted"])
         }
-        
+
         // Create asset and validate it's readable
         let asset = AVAsset(url: url)
-        
+
         // Try multiple approaches to get duration
         return try await getDurationWithFallback(asset: asset, url: url)
     }
-    
+
     private func getDurationWithFallback(asset: AVAsset, url: URL) async throws -> TimeInterval {
         // Method 1: Try basic duration property first (most efficient)
         do {
             let duration = try await asset.load(.duration)
             let seconds = CMTimeGetSeconds(duration)
-            
+
             if seconds > 0 && !seconds.isNaN && !seconds.isInfinite {
                 return seconds
             }
         } catch {
         }
-        
+
         // Method 2: Try with AVAudioPlayer as fallback
         do {
             let audioPlayer = try AVAudioPlayer(contentsOf: url)
             let duration = audioPlayer.duration
-            
+
             if duration > 0 && !duration.isNaN && !duration.isInfinite {
                 return duration
             }
         } catch {
         }
-        
+
         // Method 3: Check if file is DRM protected
         do {
             let isPlayable = try await asset.load(.isPlayable)
             let hasProtectedContent = try await asset.load(.hasProtectedContent)
-            
+
             if hasProtectedContent {
                 throw NSError(domain: "AudioImportError", code: 8, userInfo: [
                     NSLocalizedDescriptionKey: "This audio file is protected by DRM (Digital Rights Management) and cannot be imported. Please use an unprotected audio file."
                 ])
             }
-            
+
             if !isPlayable {
                 throw NSError(domain: "AudioImportError", code: 9, userInfo: [
                     NSLocalizedDescriptionKey: "This audio file format is not playable on this device."
@@ -1067,63 +1072,63 @@ struct RecordListView: View {
                 throw error
             }
         }
-        
+
         // Method 4: Try to get tracks and basic info
         do {
             let tracks = try await asset.load(.tracks)
             let isReadable = try await asset.load(.isReadable)
-            
+
             guard isReadable else {
                 throw NSError(domain: "AudioImportError", code: 4, userInfo: [
                     NSLocalizedDescriptionKey: "Audio file format is not supported or file is corrupted"
                 ])
             }
-            
+
             guard !tracks.isEmpty else {
                 throw NSError(domain: "AudioImportError", code: 5, userInfo: [
                     NSLocalizedDescriptionKey: "Audio file contains no playable tracks"
                 ])
             }
-            
+
             // For unknown duration, provide a default that user can correct later
             return 60.0 // Default 1 minute - user can edit if needed
-            
+
         } catch {
             if (error as NSError).domain == "AudioImportError" {
                 throw error
             }
         }
-        
+
         // Final fallback error
         throw NSError(domain: "AudioImportError", code: 6, userInfo: [
             NSLocalizedDescriptionKey: "Unable to process this audio file. It may be corrupted, in an unsupported format, or protected by DRM. Please try a different file."
         ])
     }
-    
+
     @MainActor
     private func saveImportedRecording(url: URL, title: String, notes: String?, folder: RecordingFolder?) async {
         do {
             // CRITICAL FIX: Extract the UUID that was used when copying the file
             let _ = url.lastPathComponent // e.g., "B1343830-8535-4ED4-B764-25562E6E7658.m4a"
             let filenameWithoutExtension = url.deletingPathExtension().lastPathComponent
-            
-            
+
+
             // CRITICAL: Use the EXACT same UUID that was used for the file copy
             guard let recordingId = UUID(uuidString: filenameWithoutExtension) else {
                 throw NSError(domain: "AudioImportError", code: 10, userInfo: [NSLocalizedDescriptionKey: "Invalid file UUID format"])
             }
-            
-            
+
+
             // Verify the file actually exists at the expected location
             guard FileManager.default.fileExists(atPath: url.path) else {
                 throw NSError(domain: "AudioImportError", code: 11, userInfo: [NSLocalizedDescriptionKey: "Imported audio file was not found at expected location"])
             }
-            
-            
+
+
             // Store the SAME path format that AudioFileStore uses for consistency
             // This ensures finalAudioURL() resolves to the exact same path
             let relativePath = "audio/\(recordingId.uuidString).m4a"
-            
+
             let recording = Recording(
                 id: recordingId,
                 title: title,
@@ -1133,78 +1138,78 @@ struct RecordListView: View {
                 notes: notes,
                 folder: folder
             )
-            
+
             // CRITICAL VERIFICATION: Ensure Recording can find its audio file before saving
             let resolvedURL = recording.finalAudioURL()
-            
+
             // Debug path resolution
             debugFilePathResolution(recording: recording, expectedURL: url, resolvedURL: resolvedURL)
-            
-            
+
+
             // CRITICAL CHECK: The Recording MUST be able to find its own file
             guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
-                
+
                 // If paths don't match, there's a UUID inconsistency issue
                 if resolvedURL.path != url.path {
                     throw NSError(domain: "AudioImportError", code: 12, userInfo: [NSLocalizedDescriptionKey: "UUID mismatch between Recording and imported file"])
                 }
-                
+
                 throw NSError(domain: "AudioImportError", code: 12, userInfo: [NSLocalizedDescriptionKey: "Recording cannot locate its audio file"])
             }
-            
-            
+
+
             let folderStore = FolderDataStore(context: modelContext)
             try folderStore.saveRecording(recording, to: folder)
-            
+
             NotificationCenter.default.post(name: .didSaveRecording, object: nil)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            
+
             // Clean up state (but keep the file since it was successfully saved)
             cancelAudioImport()
-            
+
         } catch {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
-            
+
             // Show user-friendly error
             await MainActor.run {
                 self.importError = error.localizedDescription
             }
         }
     }
-    
+
     private func cancelAudioImport() {
         // Reset state variables only - DO NOT DELETE FILES
         // Files should only be deleted if user explicitly cancels before saving
-        
+
         importedAudioURL = nil
         importedDuration = 0
         showingUploadSavePopup = false
     }
-    
+
     private func cancelAudioImportAndCleanup() {
         // This version actually deletes the file - only for user cancellation
         if let url = importedAudioURL {
             try? FileManager.default.removeItem(at: url)
         }
-        
+
         importedAudioURL = nil
         importedDuration = 0
         showingUploadSavePopup = false
     }
-    
+
     // MARK: - Debug Utilities
-    
+
     private func debugFilePathResolution(recording: Recording, expectedURL: URL, resolvedURL: URL) {
-        
+
         // Check Documents directory
         if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             let _ = docs.appendingPathComponent("audio")
         }
     }
-    
+
     // MARK: - Recording Control Functions
-    
-    
+
+
     // MARK: - Actions
     private func toggleMiniPauseResume() {
         // Check if there are pending resume operations (interruption state)
@@ -1214,7 +1219,7 @@ struct RecordListView: View {
             showMiniResumePrompt = true
             return
         }
-        
+
         do {
             if di.audio.isRecording {
                 // Pause only
@@ -1230,30 +1235,30 @@ struct RecordListView: View {
             }
         } catch { UINotificationFeedbackGenerator().notificationOccurred(.error) }
     }
-    
+
     private func manualResumeMiniRecording() {
         if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
             unifiedService.forceResumeAfterInterruption()
-            
+
             // Give a small delay for the audio service to process the resume
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 self.syncMiniRecorderState()
             }
-            
+
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
     }
-    
+
     private func syncMiniRecorderState() {
         guard let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl else { return }
-        
-        
+
+
         // Update elapsed time to trigger UI refresh
         recElapsed = unifiedService.currentTime
-        
+
         // Update prompt state to ensure it's closed after resume
         showMiniResumePrompt = false
-        
+
     }
 
     private func stopMiniAndPrompt() {
@@ -1296,18 +1301,18 @@ struct RecordListView: View {
     }
 
     private func seekToTime(_ time: TimeInterval) {
-        guard let player = player else { 
-            return 
+        guard let player = player else {
+            return
         }
-        
+
         let clampedTime = max(0, min(time, player.duration))
-        
+
         player.currentTime = clampedTime
         playbackTime = clampedTime
-        
+
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     private func togglePlayback(for rec: Recording) {
         if playingID == rec.id, let player = player {
             if isPlaying {
@@ -1416,9 +1421,9 @@ struct RecordListView: View {
             }
         }
     }
-    
+
     // MARK: - Interruption Status Helpers
-    
+
     private func getStatusColor() -> Color {
         if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
             // Check if there are pending operations (interruption state)
@@ -1428,7 +1433,7 @@ struct RecordListView: View {
         }
         return di.audio.isRecording ? Color.red : Color.orange
     }
-    
+
     private func getStatusText() -> String {
         if let unifiedService = di.audio as? UnifiedAudioRecordingServiceImpl {
             // Check if there are pending operations (interruption state)
@@ -1438,14 +1443,14 @@ struct RecordListView: View {
         }
         return di.audio.isRecording ? "Recording…" : "Paused"
     }
-    
+
     // MARK: - Retention Policy UI
-    
+
     @ViewBuilder
     private func retentionBadge(for recording: Recording) -> some View {
         let daysRemaining = getDaysUntilDeletion(for: recording)
         let isUrgent = daysRemaining <= 3
-        
+
         // Always show days remaining for free users
         Button(action: {
             if isUrgent {
@@ -1475,14 +1480,14 @@ struct RecordListView: View {
         .buttonStyle(.plain)
         .disabled(!isUrgent) // Only tappable when urgent
     }
-    
+
     private func getDaysUntilDeletion(for recording: Recording) -> Int {
         let daysSinceRecording = Calendar.current.dateComponents([.day], from: recording.createdAt, to: Date()).day ?? 0
         return max(0, FeatureManager.FreeTierLimits.historyRetentionDays - daysSinceRecording)
     }
-    
+
     // MARK: - Badge Styling Helpers
-    
+
     private func getBadgeIcon(for daysRemaining: Int) -> String {
         switch daysRemaining {
         case 0:
@@ -1493,7 +1498,7 @@ struct RecordListView: View {
             return "calendar"
         }
     }
-    
+
     private func getBadgeText(for daysRemaining: Int) -> String {
         switch daysRemaining {
         case 0:
@@ -1508,7 +1513,7 @@ struct RecordListView: View {
             return "\(daysRemaining)d"
         }
     }
-    
+
     private func getBadgeTextColor(for daysRemaining: Int) -> Color {
         switch daysRemaining {
         case 0:
@@ -1519,7 +1524,7 @@ struct RecordListView: View {
             return .secondary
         }
     }
-    
+
     private func getBadgeBackgroundColor(for daysRemaining: Int) -> Color {
         switch daysRemaining {
         case 0:
@@ -1532,7 +1537,7 @@ struct RecordListView: View {
             return Color(.systemGray6)
         }
     }
-    
+
     private func getBadgeBorderColor(for daysRemaining: Int) -> Color {
         switch daysRemaining {
         case 0...3:
@@ -1541,15 +1546,13 @@ struct RecordListView: View {
             return Color(.systemGray4)
         }
     }
-    
+
     private func showPaywallForRetentionWarning() {
-        // Navigate to paywall/subscription view
-        // This should trigger the paywall presentation
+        // Clear the retention alert state first
         selectedRecordingForRetention = nil
-        
-        // You can customize this based on your paywall implementation
-        // For now, we'll just clear the selection
-        // In a real implementation, you'd trigger the paywall here
+
+        // Trigger the paywall presentation
+        showPaywall = true
     }
 }
 
@@ -1557,7 +1560,7 @@ struct RecordListView: View {
 
 struct AudioDocumentPicker: UIViewControllerRepresentable {
     let onFileSelected: (URL) -> Void
-    
+
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [
             .audio,
@@ -1572,27 +1575,27 @@ struct AudioDocumentPicker: UIViewControllerRepresentable {
         picker.allowsMultipleSelection = false
         return picker
     }
-    
+
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {
         // No updates needed
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     class Coordinator: NSObject, UIDocumentPickerDelegate {
         let parent: AudioDocumentPicker
-        
+
         init(_ parent: AudioDocumentPicker) {
             self.parent = parent
         }
-        
+
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
             parent.onFileSelected(url)
         }
-        
+
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             // Handle cancellation if needed
         }
@@ -1604,11 +1607,11 @@ struct AudioDocumentPicker: UIViewControllerRepresentable {
 
 struct ActivityViewController: UIViewControllerRepresentable {
     let activityItems: [Any]
-    
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
-    
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
         // No updates needed
     }
@@ -1619,11 +1622,11 @@ struct ActivityViewController: UIViewControllerRepresentable {
 @available(iOS 16.0, *)
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
-    
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
-    
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
         // No updates needed
     }
