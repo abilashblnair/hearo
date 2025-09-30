@@ -271,7 +271,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7BLJV99F9J;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				
 				INFOPLIST_FILE = HearO/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AuryO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -308,7 +308,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7BLJV99F9J;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				
 				INFOPLIST_FILE = HearO/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AuryO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
