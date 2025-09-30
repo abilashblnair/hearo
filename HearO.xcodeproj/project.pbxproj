@@ -16,22 +16,9 @@
 		05C68BA12E4B885F00495B2F /* HearO.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HearO.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		05594E0A2E505E610097C4A5 /* Exceptions for "HearO" folder in "HearO" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 05C68BA02E4B885F00495B2F /* HearO */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		05C68BA32E4B885F00495B2F /* HearO */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				05594E0A2E505E610097C4A5 /* Exceptions for "HearO" folder in "HearO" target */,
-			);
 			path = HearO;
 			sourceTree = "<group>";
 		};
