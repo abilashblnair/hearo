@@ -271,9 +271,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7BLJV99F9J;
 				ENABLE_PREVIEWS = YES;
-				
-				INFOPLIST_FILE = HearO/Info.plist;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AuryO;
+				INFOPLIST_KEY_GADApplicationIdentifier = "ca-app-pub-3940256099942544~1458002511";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record audio and provide live transcription.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs speech recognition to provide live transcription of your recordings.";
@@ -308,9 +309,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7BLJV99F9J;
 				ENABLE_PREVIEWS = YES;
-				
-				INFOPLIST_FILE = HearO/Info.plist;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AuryO;
+				INFOPLIST_KEY_GADApplicationIdentifier = "ca-app-pub-3940256099942544~1458002511";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record audio and provide live transcription.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs speech recognition to provide live transcription of your recordings.";

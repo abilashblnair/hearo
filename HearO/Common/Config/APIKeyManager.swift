@@ -16,7 +16,7 @@ class APIKeyManager {
         
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
+            kSecAttrService as String: Self.serviceName,
             kSecAttrAccount as String: service.rawValue,
             kSecValueData as String: data
         ]
@@ -33,7 +33,7 @@ class APIKeyManager {
     func getAPIKey(for service: APIService) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
+            kSecAttrService as String: Self.serviceName,
             kSecAttrAccount as String: service.rawValue,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
@@ -55,7 +55,7 @@ class APIKeyManager {
     func deleteAPIKey(for service: APIService) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
+            kSecAttrService as String: Self.serviceName,
             kSecAttrAccount as String: service.rawValue
         ]
         
@@ -67,9 +67,9 @@ class APIKeyManager {
 // MARK: - API Services
 
 enum APIService: String, CaseIterable {
-    case openAI = "OPENAI_API_KEY"
-    case assemblyAI = "ASSEMBLYAI_API_KEY"
-    
+    case openAI = "openai_key"
+    case assemblyAI = "assemblyai_key"
+
     var displayName: String {
         switch self {
         case .openAI:

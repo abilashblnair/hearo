@@ -1,7 +1,7 @@
 import Foundation
 
 final class GPTSummarizationServiceImpl: SummarizationService, TranslationService {
-    private let apiKey: String
+    private var apiKey: String { Secrets.openAIKey }
     private let model = "gpt-4.1"
     private let maxChunkDuration: TimeInterval = 8 * 60 // 8 minutes per chunk
     private let maxTranslationChunkDuration: TimeInterval = 2 * 60 // 2 minutes per chunk for translation
@@ -17,9 +17,7 @@ final class GPTSummarizationServiceImpl: SummarizationService, TranslationServic
         return URLSession(configuration: configuration)
     }()
     
-    init(apiKey: String) {
-        self.apiKey = apiKey
-    }
+    init(apiKey: String) {}
     
     // MARK: - SummarizationService
     func summarize(segments: [TranscriptSegment], locale: String = "en-US", title: String? = nil, notes: String? = nil) async throws -> Summary {

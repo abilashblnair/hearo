@@ -11,7 +11,7 @@ struct AAIStreamingTranscriptView: View {
     @State private var errorMessage: String?
 
     private let sampleRate: Double = 16_000
-    private let apiBase = URL(string: "wss://streaming.assemblyai.com/v3/ws")!
+    private let apiBase = URL(string: "wss://api.assemblyai.com/v3/realtime")!
     private let audioStateManager = AudioStateManager.shared
 
     private var targetFormat: AVAudioFormat? {
@@ -140,7 +140,7 @@ struct AAIStreamingTranscriptView: View {
         
         let key = Secrets.assemblyAIKey
         guard key.isEmpty == false else {
-            errorMessage = "Missing ASSEMBLYAI_API_KEY in Info.plist/UserDefaults."
+            errorMessage = "AssemblyAI API key missing. Go to Settings → API Keys and save your key."
             AudioStateManager.shared.stopStandaloneTranscript()
             return
         }
@@ -154,8 +154,11 @@ struct AAIStreamingTranscriptView: View {
             
             converter = AVAudioConverter(from: inputFormat, to: targetFormat)
             
-            // Set up WebSocket
-            let request = URLRequest(url: apiBase)
+            // Set up WebSocket with auth header and sample rate
+            var components = URLComponents(url: apiBase, resolvingAgainstBaseURL: false)!
+            components.queryItems = [URLQueryItem(name: "sample_rate", value: String(Int(sampleRate)))]
+            var request = URLRequest(url: components.url!)
+            request.setValue(key, forHTTPHeaderField: "Authorization")
             webSocket = urlSession.webSocketTask(with: request)
             webSocket?.resume()
             

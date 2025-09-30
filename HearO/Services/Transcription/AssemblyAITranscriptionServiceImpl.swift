@@ -20,7 +20,7 @@ final class AssemblyAITranscriptionServiceImpl: TranscriptionService {
 
     func transcribe(audioURL: URL, languageCode: String) async throws -> [TranscriptSegment] {
         guard !apiKey.isEmpty else {
-            throw NSError(domain: "AssemblyAI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing AssemblyAI API key. Add ASSEMBLYAI_API_KEY to Info.plist or set via UserDefaults."])
+            throw NSError(domain: "AssemblyAI", code: -1, userInfo: [NSLocalizedDescriptionKey: "AssemblyAI API key is missing. Go to Settings → API Keys and save your key."])
         }
 
         // 1) Upload local file
@@ -40,6 +40,8 @@ final class AssemblyAITranscriptionServiceImpl: TranscriptionService {
     // MARK: - Private helpers
     private func uploadLocalFile(_ fileURL: URL) async throws -> String {
         let uploadEndpoint = baseURL.appendingPathComponent("upload")
+        
+        print("🔑 Using AssemblyAI key: \(apiKey.prefix(10))...")
         
         
         // Additional debugging for file access
